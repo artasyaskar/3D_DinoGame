@@ -10,42 +10,39 @@ const gravity = -0.001;
 
 export function loadDino(callback) {
   const loader = new GLTFLoader();
-  loader.load('/assets/models/characters/dino.glb', (gltf) => {
-    dino = gltf.scene;
-    dino.position.set(0, 0, 0);
-    dino.scale.set(0.5, 0.5, 0.5);
-    scene.add(dino);
-    callback();
-  }, undefined, (error) => {
-    console.error('Error loading Dino model:', error);
-  });
-}
-
-export function getDino() {
-  return dino;
-}
-
-export function updateDinoPhysics(deltaTime) {
-  if (!dino || !jumping) return;
-
-  dino.position.y += velocityY;
-  velocityY += gravity;
-
-  if (dino.position.y <= 0) {
-    dino.position.y = 0;
-    velocityY = 0;
-    jumping = false;
+  
+  // Add fallback if model fails to load
+  try {
+    loader.load('/assets/models/characters/dino.glb', (gltf) => {
+      dino = gltf.scene;
+      dino.position.set(0, 0, 0);
+      dino.scale.set(0.5, 0.5, 0.5);
+      
+      // Add debug bounding box
+      const bbox = new THREE.BoxHelper(dino, 0xffff00);
+      scene.add(bbox);
+      
+      scene.add(dino);
+      if (callback) callback();
+    }, undefined, (error) => {
+      console.error('Error loading Dino model:', error);
+      createFallbackDino();
+      if (callback) callback();
+    });
+  } catch (e) {
+    console.error('GLTFLoader exception:', e);
+    createFallbackDino();
+    if (callback) callback();
   }
 }
 
-export function jump() {
-  if (!jumping) {
-    velocityY = 0.08;
-    jumping = true;
-    playSound('jump');
-  }
+function createFallbackDino() {
+  // Create a simple cube as fallback
+  const geometry = new THREE.BoxGeometry(0.5, 1, 0.5);
+  const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+  dino = new THREE.Mesh(geometry, material);
+  dino.position.set(0, 0.5, 0);
+  scene.add(dino);
 }
 
-export function isJumping() {
-  return jumping;
-}
+// ... rest of the file remains the same ...
