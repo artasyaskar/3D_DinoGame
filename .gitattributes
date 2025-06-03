@@ -1,0 +1,2 @@
+# Auto-convert line endings to LF in repo, keep CRLF locally on Windows
+* text=auto
