@@ -1,22 +1,9 @@
 [build]
-  command = "npm run build"
-  publish = "dist"
+  command   = "npm run build"
+  publish   = "dist"
 
+# Redirect all 404s to index.html so that client-side routing (if any) works.
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-  force = true
-
-[[headers]]
-  for = "/assets/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000"
-
-[build.environment]
-  NODE_VERSION = "18"
-
-[dev]
-  command = "npm run dev"
-  port = 5173
-  targetPort = 5173
