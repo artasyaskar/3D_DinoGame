@@ -1,48 +1,70 @@
-import * as THREE from 'three';
-import { loadDino } from '../scenes/entities/Dinosaur';
-import { createGround } from '../scenes/entities/Ground';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { Howl } from 'howler';
 
-// Create loaders
-const textureLoader = new THREE.TextureLoader();
-const gltfLoader = new GLTFLoader();
-
-// Define asset paths (Vite serves public/assets/* at /assets/*)
-const assetPaths = {
-  models: {
-    dino: '/assets/models/characters/dino.glb',
-    rock: '/assets/models/obstacles/rock.glb',
-    bird: '/assets/models/obstacles/bird.glb',
-    cactus: '/assets/models/obstacles/cactus.glb'
-  },
-  textures: {
-    dino: '/assets/textures/dino_diffuse.png',
-    ground: '/assets/textures/ground_diffuse.jpg',
-    groundNormal: '/assets/textures/ground_normal.jpg'
-  },
-  sounds: {
-    jump: '/assets/sounds/effects/jump.ogg',
-    hit: '/assets/sounds/effects/crash.ogg',
-    background: '/assets/sounds/music/background.mp3'
-  }
-};
-
-// Store paths globally
-window.ASSET_PATHS = assetPaths;
-console.log('Asset paths:', assetPaths);
-
-export { gltfLoader, textureLoader, assetPaths };
+// Store loaded assets
+const models = {};
+const sounds = {};
 
 export function preloadAssets() {
-  try {
-    loadDino(() => {
-      console.log('Dinosaur loaded successfully');
+  return Promise.all([loadModels(), loadSounds()]);
+}
+
+function loadModels() {
+  const loader = new GLTFLoader();
+  const toLoad = [
+    { name: 'dino', path: '/assets/models/characters/dino.glb' },
+    // Add any other models here
+  ];
+
+  const promises = toLoad.map((item) => {
+    return new Promise((resolve, reject) => {
+      loader.load(
+        item.path,
+        (gltf) => {
+          models[item.name] = gltf.scene;
+          resolve();
+        },
+        undefined,
+        (error) => {
+          reject(new Error(`Failed to load model ${item.name}: ${error}`));
+        }
+      );
     });
-    createGround();
-    window.dispatchEvent(new Event('assetsLoaded'));
-    console.log('Assets loaded event dispatched');
-  } catch (error) {
-    console.error('Error during asset preloading:', error);
-    window.dispatchEvent(new Event('assetsLoaded'));
+  });
+
+  return Promise.all(promises);
+}
+
+function loadSounds() {
+  const toLoad = [
+    {
+      name: 'jump',
+      src: ['/assets/audio/jump.mp3']
+    },
+    {
+      name: 'collision',
+      src: ['/assets/audio/collision.mp3']
+    }
+    // Add other sounds here
+  ];
+
+  toLoad.forEach((item) => {
+    sounds[item.name] = new Howl({
+      src: item.src,
+      preload: true
+    });
+  });
+
+  // No need to wait – Howler preloads automatically
+  return Promise.resolve();
+}
+
+export function getModel(name) {
+  return models[name]?.clone();
+}
+
+export function playSound(name) {
+  if (sounds[name]) {
+    sounds[name].play();
   }
 }
