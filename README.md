@@ -4,7 +4,7 @@ A 3D version of the classic Dino Runner game, built with Three.js, Howler.js, an
 
 ## Live Demo
 
-- GitHub Pages: [https://<YOUR_GITHUB_USERNAME>.github.io/3D_DinoGame/](https://<YOUR_GITHUB_USERNAME>.github.io/3D_DinoGame/)  
+- GitHub Pages: [https://artasyaskar.github.io/3D_DinoGame/](https://artasyaskar.github.io/3D_DinoGame/)  
 - Netlify: _TBD once you link your Netlify site_  
 
 ## Table of Contents
