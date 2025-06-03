@@ -1,50 +1,70 @@
 import * as THREE from 'three';
-import { scene } from '../utils/Constants';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { scene } from '../../utils/Constants';
 
 export function createGround() {
-  // Create a more interesting ground
-  const groundGeometry = new THREE.PlaneGeometry(30, 100);
+  const textureLoader = new THREE.TextureLoader();
+  const gltfLoader = new GLTFLoader();
+
+  // Load ground textures
+  const diffuseMap = textureLoader.load(window.ASSET_PATHS?.textures?.ground || '/assets/textures/ground_diffuse.jpg');
+  const normalMap = textureLoader.load(window.ASSET_PATHS?.textures?.groundNormal || '/assets/textures/ground_normal.jpg');
+
+  // Set texture properties
+  diffuseMap.wrapS = diffuseMap.wrapT = THREE.RepeatWrapping;
+  normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping;
+  diffuseMap.repeat.set(8, 16);
+  normalMap.repeat.set(8, 16);
+
+  // Create main ground
+  const groundGeometry = new THREE.PlaneGeometry(50, 100, 50, 100);
   const groundMaterial = new THREE.MeshStandardMaterial({
-    color: 0x8c8c8c,
+    map: diffuseMap,
+    normalMap: normalMap,
     roughness: 0.8,
-    metalness: 0.2
+    metalness: 0.2,
+    normalScale: new THREE.Vector2(1, 1)
   });
-  
+
   const ground = new THREE.Mesh(groundGeometry, groundMaterial);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = 0;
-  ground.position.z = -20;
+  ground.position.set(0, -0.01, -25);
   ground.receiveShadow = true;
-  
-  // Add ground texture if available
-  const textureLoader = new THREE.TextureLoader();
-  textureLoader.load('/assets/textures/ground_diffuse.jpg', 
-    (texture) => {
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(10, 50);
-      groundMaterial.map = texture;
-      groundMaterial.needsUpdate = true;
-    },
-    undefined, 
-    (err) => {
-      console.error('Error loading ground texture:', err);
-    }
-  );
-  
   scene.add(ground);
-  
-  // Add some decorative rocks
-  for (let i = 0; i < 20; i++) {
-    const rockGeometry = new THREE.DodecahedronGeometry(0.1 + Math.random() * 0.3, 0);
-    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
-    const rock = new THREE.Mesh(rockGeometry, rockMaterial);
-    rock.position.set(
-      -10 + Math.random() * 20,
-      0.2,
-      -30 + Math.random() * 60
-    );
-    rock.castShadow = true;
-    scene.add(rock);
-  }
+
+  // Load detailed ground decorations
+  gltfLoader.load(window.ASSET_PATHS?.models?.groundDetails || '/assets/models/environment/ground_details.glb',
+    (gltf) => {
+      const details = gltf.scene;
+      details.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      details.position.set(0, 0, -25);
+      scene.add(details);
+    },
+    undefined,
+    (error) => console.error('Error loading ground details:', error)
+  );
+
+  // Load mountains in the background
+  gltfLoader.load(window.ASSET_PATHS?.models?.mountain || '/assets/models/environment/mountain.glb',
+    (gltf) => {
+      const mountains = gltf.scene;
+      mountains.traverse((child) => {
+        if (child.isMesh) {
+          child.material.side = THREE.DoubleSide;
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      mountains.position.set(0, 0, -75);
+      mountains.scale.set(2, 2, 2);
+      scene.add(mountains);
+    },
+    undefined,
+    (error) => console.error('Error loading mountains:', error)
+  );
 }

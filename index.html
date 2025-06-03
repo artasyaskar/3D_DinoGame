@@ -4,6 +4,106 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Dino Runner 3D</title>
+  
+  <!-- Error tracking script to help with debugging -->
+  <script>
+    // Create a visual console logger
+    window.addEventListener('DOMContentLoaded', function() {
+      const debugConsole = document.createElement('div');
+      debugConsole.id = 'debug-console';
+      debugConsole.style.cssText = `
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 200px;
+        background: rgba(0,0,0,0.8);
+        color: #00ff00;
+        font-family: monospace;
+        font-size: 12px;
+        padding: 10px;
+        overflow-y: auto;
+        z-index: 10000;
+        display: none;
+      `;
+      document.body.appendChild(debugConsole);
+      
+      // Add toggle button
+      const toggleBtn = document.createElement('button');
+      toggleBtn.innerText = 'Debug Console';
+      toggleBtn.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        z-index: 10001;
+        padding: 5px;
+        background: #333;
+        color: white;
+        border: none;
+        border-radius: 4px;
+      `;
+      document.body.appendChild(toggleBtn);
+      
+      toggleBtn.addEventListener('click', function() {
+        debugConsole.style.display = debugConsole.style.display === 'none' ? 'block' : 'none';
+      });
+      
+      // Override console methods
+      const originalConsole = {
+        log: console.log,
+        warn: console.warn,
+        error: console.error
+      };
+      
+      function addToDebugConsole(type, args) {
+        const line = document.createElement('div');
+        line.className = 'debug-' + type;
+        line.style.color = type === 'error' ? '#ff5555' : type === 'warn' ? '#ffff55' : '#55ff55';
+        line.textContent = '[' + type.toUpperCase() + '] ' + Array.from(args).join(' ');
+        debugConsole.appendChild(line);
+        debugConsole.scrollTop = debugConsole.scrollHeight;
+        
+        // Keep console limited to last 100 messages
+        while (debugConsole.children.length > 100) {
+          debugConsole.removeChild(debugConsole.firstChild);
+        }
+      }
+      
+      console.log = function() {
+        originalConsole.log.apply(console, arguments);
+        addToDebugConsole('log', arguments);
+      };
+      
+      console.warn = function() {
+        originalConsole.warn.apply(console, arguments);
+        addToDebugConsole('warn', arguments);
+      };
+      
+      console.error = function() {
+        originalConsole.error.apply(console, arguments);
+        addToDebugConsole('error', arguments);
+      };
+      
+      // Add global error handling
+      window.addEventListener('error', function(event) {
+        console.error('GLOBAL ERROR:', event.message, 'at', event.filename, 'line', event.lineno);
+        if (event.error && event.error.stack) {
+          console.error('Stack:', event.error.stack);
+        }
+      });
+      
+      // Track Three.js/WebGL errors
+      window.addEventListener('webglcontextlost', function() {
+        console.error('WebGL context lost! This could be due to memory limits or graphics driver issues.');
+      });
+      
+      // Log initial diagnostic info
+      console.log('Browser info:', navigator.userAgent);
+      console.log('Screen size:', window.innerWidth, 'x', window.innerHeight);
+      console.log('WebGL support:', !!window.WebGLRenderingContext ? 'Supported' : 'Not supported');
+    });
+  </script>
+  
   <style>
     html, body {
       margin: 0;
@@ -62,6 +162,64 @@
     <p>High Score: <span id="high-score">0</span></p>
     <button id="restart-btn">Restart</button>
   </div>
+  <!-- Asset checker script -->
+  <script>
+    // Function to check if file exists
+    window.checkFileExists = async function(url) {
+      try {
+        const response = await fetch(url, { method: 'HEAD' });
+        return response.ok;
+      } catch (e) {
+        console.error('Error checking file:', url, e);
+        return false;
+      }
+    };
+    
+    // Helper to check critical assets before game starts
+    window.checkCriticalAssets = async function() {
+      console.log('Checking critical assets...');
+      const assetsToCheck = [
+        '/assets/models/characters/dino.glb',
+        '/public/assets/models/characters/dino.glb',
+        '/assets/textures/ground_diffuse.jpg',
+        '/public/assets/textures/ground_diffuse.jpg',
+        '/assets/sounds/effects/jump.ogg',
+        '/public/assets/sounds/effects/jump.ogg'
+      ];
+      
+      const results = {};
+      for (const asset of assetsToCheck) {
+        results[asset] = await window.checkFileExists(asset);
+        console.log(`Asset ${asset}: ${results[asset] ? 'Found' : 'Not found'}`);
+      }
+      
+      return results;
+    };
+    
+    // Expose diagnostics globally
+    window.runDiagnostics = function() {
+      console.log('--- RUNNING DIAGNOSTICS ---');
+      console.log('DOM Elements: Score Display:', !!document.getElementById('score-display'));
+      console.log('DOM Elements: Game Over:', !!document.getElementById('game-over'));
+      console.log('DOM Elements: Restart Button:', !!document.getElementById('restart-btn'));
+      console.log('Game initialized:', !!window.gameApp);
+      
+      if (window.gameApp) {
+        console.log('Game running:', window.gameApp.isRunning);
+        console.log('Game active:', window.gameApp.gameActive);
+      }
+      
+      // Check renderer
+      if (window.RENDERER_INFO) {
+        console.log('Renderer info:', window.RENDERER_INFO);
+      } else {
+        console.warn('No renderer info available');
+      }
+      
+      window.checkCriticalAssets();
+    };
+  </script>
+  
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
