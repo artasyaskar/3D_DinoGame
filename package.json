@@ -2,7 +2,7 @@
   "name": "dino-runner-3d",
   "version": "1.0.0",
   "type": "module",
-  "homepage": "https://artasyaskar.github.io/3D_DinoGame/",
+  "homepage": "https://github.com/artasyaskar/3D_DinoGame",
   "scripts": {
     "dev": "vite",
     "prebuild": "rimraf dist",
