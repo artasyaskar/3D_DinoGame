@@ -1,60 +1,29 @@
+let score = 0;
+let lastTime = 0;
+
 export class ScoreSystem {
   constructor() {
-    this.score = 0;
-    this.highScore = parseInt(localStorage.getItem('dinoHighScore')) || 0;
-    this.scoreDisplay = document.getElementById('score-display');
-    
-    // Initialize score display
-    this.updateScoreDisplay();
-    console.log('Score system initialized');
+    lastTime = performance.now();
+    const scoreboard = document.createElement('div');
+    scoreboard.id = 'scoreboard';
+    scoreboard.style.cssText = `
+      position: absolute;
+      top: 10px;
+      right: 20px;
+      font-family: sans-serif;
+      font-size: 20px;
+      color: #fff;
+      text-shadow: 1px 1px 2px #000;
+    `;
+    scoreboard.textContent = `Score: 0`;
+    document.body.appendChild(scoreboard);
   }
-  
-  // Update the score with the given delta
-  updateScore(delta = 1) {
-    try {
-      this.score += delta;
-      this.updateScoreDisplay();
-      
-      // Update high score if current score is higher
-      if (this.score > this.highScore) {
-        this.updateHighScore();
-      }
-    } catch (error) {
-      console.error('Error updating score:', error);
+
+  update(delta) {
+    score += delta * 10; // Increase score over time
+    const scoreboard = document.getElementById('scoreboard');
+    if (scoreboard) {
+      scoreboard.textContent = `Score: ${Math.floor(score)}`;
     }
-  }
-  
-  // Update the score display element
-  updateScoreDisplay() {
-    if (this.scoreDisplay) {
-      this.scoreDisplay.innerText = `Score: ${Math.floor(this.score)}`;
-    }
-  }
-  
-  // Update the high score if needed
-  updateHighScore() {
-    this.highScore = Math.floor(this.score);
-    try {
-      localStorage.setItem('dinoHighScore', this.highScore);
-      console.log('New high score:', this.highScore);
-    } catch (error) {
-      console.warn('Could not save high score to localStorage:', error);
-    }
-  }
-  
-  // Reset the score to zero
-  resetScore() {
-    this.score = 0;
-    this.updateScoreDisplay();
-  }
-  
-  // Get the current score (floor to integer)
-  getCurrentScore() {
-    return Math.floor(this.score);
-  }
-  
-  // Get the high score
-  getHighScore() {
-    return this.highScore;
   }
 }
