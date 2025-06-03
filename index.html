@@ -1,225 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Dino Runner 3D</title>
-  
-  <!-- Error tracking script to help with debugging -->
-  <script>
-    // Create a visual console logger
-    window.addEventListener('DOMContentLoaded', function() {
-      const debugConsole = document.createElement('div');
-      debugConsole.id = 'debug-console';
-      debugConsole.style.cssText = `
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        height: 200px;
-        background: rgba(0,0,0,0.8);
-        color: #00ff00;
-        font-family: monospace;
-        font-size: 12px;
-        padding: 10px;
-        overflow-y: auto;
-        z-index: 10000;
-        display: none;
-      `;
-      document.body.appendChild(debugConsole);
-      
-      // Add toggle button
-      const toggleBtn = document.createElement('button');
-      toggleBtn.innerText = 'Debug Console';
-      toggleBtn.style.cssText = `
-        position: fixed;
-        bottom: 10px;
-        right: 10px;
-        z-index: 10001;
-        padding: 5px;
-        background: #333;
-        color: white;
-        border: none;
-        border-radius: 4px;
-      `;
-      document.body.appendChild(toggleBtn);
-      
-      toggleBtn.addEventListener('click', function() {
-        debugConsole.style.display = debugConsole.style.display === 'none' ? 'block' : 'none';
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>Dino Runner 3D</title>
+
+    <!-- Error tracking script to help with debugging -->
+    <script>
+      // Create a visual console logger
+      window.addEventListener('DOMContentLoaded', function () {
+        const debugConsole = document.createElement('div');
+        debugConsole.id = 'debug-console';
+        debugConsole.style.cssText = `
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          max-height: 150px;
+          overflow-y: auto;
+          font-family: monospace;
+          font-size: 12px;
+          background: rgba(0, 0, 0, 0.7);
+          color: #0f0;
+          padding: 8px;
+          z-index: 9999;
+        `;
+        document.body.appendChild(debugConsole);
+
+        const origConsoleLog = console.log,
+          origConsoleWarn = console.warn,
+          origConsoleError = console.error;
+
+        console.log = function (...args) {
+          origConsoleLog.apply(console, args);
+          const msg = document.createElement('div');
+          msg.textContent = args.join(' ');
+          debugConsole.appendChild(msg);
+          debugConsole.scrollTop = debugConsole.scrollHeight;
+        };
+        console.warn = function (...args) {
+          origConsoleWarn.apply(console, args);
+          const msg = document.createElement('div');
+          msg.style.color = '#ff0';
+          msg.textContent = args.join(' ');
+          debugConsole.appendChild(msg);
+          debugConsole.scrollTop = debugConsole.scrollHeight;
+        };
+        console.error = function (...args) {
+          origConsoleError.apply(console, args);
+          const msg = document.createElement('div');
+          msg.style.color = '#f00';
+          msg.textContent = args.join(' ');
+          debugConsole.appendChild(msg);
+          debugConsole.scrollTop = debugConsole.scrollHeight;
+        };
+
+        window.checkCriticalAssets = () => {
+          if (!window.THREE) {
+            console.error('Three.js failed to load');
+          }
+          if (!window.Howl) {
+            console.warn('Howler.js not loaded');
+          }
+        };
+
+        window.checkWebGL = () => {
+          if (
+            !window.WebGLRenderingContext ||
+            !document.createElement('canvas').getContext('webgl')
+          ) {
+            const warning = document.createElement('div');
+            warning.style.cssText = `
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100%;
+              background: rgba(255, 0, 0, 0.9);
+              color: white;
+              padding: 20px;
+              font-family: sans-serif;
+              text-align: center;
+              z-index: 10000;
+            `;
+            warning.innerHTML = `
+              <h2>WebGL Not Supported</h2>
+              <p>Your browser or device does not support WebGL.</p>
+              <p>Please use a modern desktop browser for the best experience.</p>
+            `;
+            document.body.appendChild(warning);
+            return false;
+          }
+          return true;
+        };
+
+        window.checkWebGL();
       });
-      
-      // Override console methods
-      const originalConsole = {
-        log: console.log,
-        warn: console.warn,
-        error: console.error
-      };
-      
-      function addToDebugConsole(type, args) {
-        const line = document.createElement('div');
-        line.className = 'debug-' + type;
-        line.style.color = type === 'error' ? '#ff5555' : type === 'warn' ? '#ffff55' : '#55ff55';
-        line.textContent = '[' + type.toUpperCase() + '] ' + Array.from(args).join(' ');
-        debugConsole.appendChild(line);
-        debugConsole.scrollTop = debugConsole.scrollHeight;
-        
-        // Keep console limited to last 100 messages
-        while (debugConsole.children.length > 100) {
-          debugConsole.removeChild(debugConsole.firstChild);
-        }
-      }
-      
-      console.log = function() {
-        originalConsole.log.apply(console, arguments);
-        addToDebugConsole('log', arguments);
-      };
-      
-      console.warn = function() {
-        originalConsole.warn.apply(console, arguments);
-        addToDebugConsole('warn', arguments);
-      };
-      
-      console.error = function() {
-        originalConsole.error.apply(console, arguments);
-        addToDebugConsole('error', arguments);
-      };
-      
-      // Add global error handling
-      window.addEventListener('error', function(event) {
-        console.error('GLOBAL ERROR:', event.message, 'at', event.filename, 'line', event.lineno);
-        if (event.error && event.error.stack) {
-          console.error('Stack:', event.error.stack);
-        }
-      });
-      
-      // Track Three.js/WebGL errors
-      window.addEventListener('webglcontextlost', function() {
-        console.error('WebGL context lost! This could be due to memory limits or graphics driver issues.');
-      });
-      
-      // Log initial diagnostic info
-      console.log('Browser info:', navigator.userAgent);
-      console.log('Screen size:', window.innerWidth, 'x', window.innerHeight);
-      console.log('WebGL support:', !!window.WebGLRenderingContext ? 'Supported' : 'Not supported');
-    });
-  </script>
-  
-  <style>
-    html, body {
-      margin: 0;
-      overflow: hidden;
-      height: 100%;
-      width: 100%;
-      background-color: #f0f0f0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    canvas {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-      touch-action: manipulation;
-    }
-    #score-display {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      font-size: 24px;
-      color: white;
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
-      z-index: 10;
-      font-weight: bold;
-    }
-    #game-over {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.8);
-      padding: 20px;
-      border-radius: 10px;
-      text-align: center;
-      display: none;
-      z-index: 20;
-      color: white;
-    }
-    #restart-btn {
-      background: #4CAF50;
-      border: none;
-      color: white;
-      padding: 10px 20px;
-      margin-top: 15px;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 18px;
-    }
-  </style>
-</head>
-<body>
-  <div id="score-display">Score: 0</div>
-  <div id="game-over">
-    <h2>Game Over!</h2>
-    <p>Your Score: <span id="final-score">0</span></p>
-    <p>High Score: <span id="high-score">0</span></p>
-    <button id="restart-btn">Restart</button>
-  </div>
-  <!-- Asset checker script -->
-  <script>
-    // Function to check if file exists
-    window.checkFileExists = async function(url) {
-      try {
-        const response = await fetch(url, { method: 'HEAD' });
-        return response.ok;
-      } catch (e) {
-        console.error('Error checking file:', url, e);
-        return false;
-      }
-    };
-    
-    // Helper to check critical assets before game starts
-    window.checkCriticalAssets = async function() {
-      console.log('Checking critical assets...');
-      const assetsToCheck = [
-        '/assets/models/characters/dino.glb',
-        '/public/assets/models/characters/dino.glb',
-        '/assets/textures/ground_diffuse.jpg',
-        '/public/assets/textures/ground_diffuse.jpg',
-        '/assets/sounds/effects/jump.ogg',
-        '/public/assets/sounds/effects/jump.ogg'
-      ];
-      
-      const results = {};
-      for (const asset of assetsToCheck) {
-        results[asset] = await window.checkFileExists(asset);
-        console.log(`Asset ${asset}: ${results[asset] ? 'Found' : 'Not found'}`);
-      }
-      
-      return results;
-    };
-    
-    // Expose diagnostics globally
-    window.runDiagnostics = function() {
-      console.log('--- RUNNING DIAGNOSTICS ---');
-      console.log('DOM Elements: Score Display:', !!document.getElementById('score-display'));
-      console.log('DOM Elements: Game Over:', !!document.getElementById('game-over'));
-      console.log('DOM Elements: Restart Button:', !!document.getElementById('restart-btn'));
-      console.log('Game initialized:', !!window.gameApp);
-      
-      if (window.gameApp) {
-        console.log('Game running:', window.gameApp.isRunning);
-        console.log('Game active:', window.gameApp.gameActive);
-      }
-      
-      // Check renderer
-      if (window.RENDERER_INFO) {
-        console.log('Renderer info:', window.RENDERER_INFO);
-      } else {
-        console.warn('No renderer info available');
-      }
-      
-      window.checkCriticalAssets();
-    };
-  </script>
-  
-  <script type="module" src="/src/main.js"></script>
-</body>
+    </script>
+  </head>
+  <body>
+    <!-- Vite will automatically replace this with the correct <script> tags on build -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
 </html>
