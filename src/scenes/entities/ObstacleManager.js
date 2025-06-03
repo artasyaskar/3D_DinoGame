@@ -1,139 +1,59 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { scene } from '../../utils/Constants';
-import { getDino } from './Dinosaur';
+import { detectCollisionWithObstacle } from './Dinosaur';
+import { playSound } from '../../utils/Loader';
 
 export class ObstacleManager {
   constructor() {
     this.obstacles = [];
-    this.spawnTimer = 0;
-    this.spawnInterval = 3; // seconds
-    this.obstacleSpeed = 5;
-    this.obstacleModels = {};
-    this.loader = new GLTFLoader();
-    
-    // Load obstacle models
-    this.loadObstacleModel('cactus', window.ASSET_PATHS?.models?.cactus || '/assets/models/obstacles/cactus.glb');
-    this.loadObstacleModel('rock', window.ASSET_PATHS?.models?.rock || '/assets/models/obstacles/rock.glb');
-    this.loadObstacleModel('bird', window.ASSET_PATHS?.models?.bird || '/assets/models/obstacles/bird.glb');
+    this.spawnInterval = 2.0; // seconds
+    this.timeSinceLastSpawn = 0;
+    this.speed = 10;
   }
 
-  loadObstacleModel(name, path) {
-    this.loader.load(path,
-      (gltf) => {
-        this.obstacleModels[name] = gltf.scene;
-        // Set up materials and shadows
-        gltf.scene.traverse((child) => {
-          if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-            child.material.roughness = 0.8;
-            child.material.metalness = 0.2;
-          }
-        });
-      },
-      undefined,
-      (error) => console.error(`Error loading ${name} model:`, error)
-    );
+  init(scene, camera) {
+    // Nothing special for now; keep references if needed
+    this.scene = scene;
+    this.camera = camera;
   }
 
-  update(deltaTime) {
-    this.spawnTimer += deltaTime;
-    
-    // Spawn new obstacles
-    if (this.spawnTimer >= this.spawnInterval) {
+  update(delta) {
+    this.timeSinceLastSpawn += delta;
+
+    // Spawn new obstacle
+    if (this.timeSinceLastSpawn >= this.spawnInterval) {
       this.spawnObstacle();
-      this.spawnTimer = 0;
-      // Gradually increase difficulty
-      this.spawnInterval = Math.max(1.5, this.spawnInterval - 0.01);
-      this.obstacleSpeed += 0.1;
+      this.timeSinceLastSpawn = 0;
     }
-    
-    // Update existing obstacles
-    for (let i = this.obstacles.length - 1; i >= 0; i--) {
-      const obstacle = this.obstacles[i];
-      obstacle.position.z += this.obstacleSpeed * deltaTime;
-      
-      // Remove obstacles that are behind the camera
-      if (obstacle.position.z > 10) {
-        scene.remove(obstacle);
-        this.obstacles.splice(i, 1);
+
+    // Move existing obstacles
+    this.obstacles.forEach((obs, index) => {
+      obs.position.x -= this.speed * delta;
+      // If off-screen → remove
+      if (obs.position.x < -20) {
+        this.scene.remove(obs);
+        this.obstacles.splice(index, 1);
+      } else {
+        // Check collision with dino
+        if (detectCollisionWithObstacle(obs)) {
+          playSound('collision');
+          if (window.gameApp) {
+            window.gameApp.showGameOver();
+          }
+        }
       }
-      
-      // Check collision with dino
-      if (this.checkCollision(obstacle)) {
-        this.onCollision();
-      }
-    }
-  }
-  
-  spawnObstacle() {
-    // Choose a random obstacle type
-    const types = Object.keys(this.obstacleModels);
-    if (types.length === 0) return; // No models loaded yet
-    
-    const type = types[Math.floor(Math.random() * types.length)];
-    const model = this.obstacleModels[type].clone();
-    
-    // Set random position
-    const xPos = (Math.random() - 0.5) * 4; // Random position across the path
-    const zPos = -50; // Far enough to be out of view
-    let yPos = 0;
-    
-    // Birds should be higher
-    if (type === 'bird') {
-      yPos = 1.5 + Math.random() * 1.5; // Random height for birds
-    }
-    
-    model.position.set(xPos, yPos, zPos);
-    model.scale.set(0.5, 0.5, 0.5); // Adjust scale as needed
-    
-    // Add collision box
-    const box = new THREE.Box3().setFromObject(model);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    
-    model.userData.collider = new THREE.Box3();
-    model.userData.type = type;
-    
-    scene.add(model);
-    this.obstacles.push(model);
-  }
-  
-  checkCollision(obstacle) {
-    const dino = getDino();
-    if (!dino) return false;
-    
-    // Update obstacle's collision box
-    obstacle.userData.collider.setFromObject(obstacle);
-    
-    // Create dino collision box with some adjustment for better gameplay
-    const dinoBox = new THREE.Box3().setFromObject(dino);
-    // Make collision box slightly smaller than visual model for more forgiving gameplay
-    dinoBox.min.add(new THREE.Vector3(0.1, 0.1, 0.1));
-    dinoBox.max.sub(new THREE.Vector3(0.1, 0.1, 0.1));
-    
-    return dinoBox.intersectsBox(obstacle.userData.collider);
-  }
-  
-  onCollision() {
-    // Trigger game over
-    if (window.showGameOver) {
-      window.showGameOver();
-    }
-  }
-  
-  reset() {
-    // Remove all obstacles
-    this.obstacles.forEach(obstacle => {
-      scene.remove(obstacle);
     });
-    this.obstacles = [];
-    this.spawnTimer = 0;
-    this.spawnInterval = 3;
-    this.obstacleSpeed = 5;
+  }
+
+  spawnObstacle() {
+    const geometry = new THREE.BoxGeometry(1, 2, 1);
+    const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    const obstacle = new THREE.Mesh(geometry, material);
+    obstacle.castShadow = true;
+    obstacle.position.set(20, 1, 0);
+    this.scene.add(obstacle);
+    this.obstacles.push(obstacle);
   }
 }
 
-// Create global instance
 export const obstacleManager = new ObstacleManager();
