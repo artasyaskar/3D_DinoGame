@@ -12,7 +12,7 @@ export function preloadAssets() {
 function loadModels() {
   const loader = new GLTFLoader();
   const toLoad = [
-    { name: 'dino', path: '/assets/models/characters/dino.glb' },
+    { name: 'dino', path: import.meta.env.BASE_URL + 'assets/models/characters/dino.glb' },
     // Add any other models here
   ];
 
@@ -39,11 +39,11 @@ function loadSounds() {
   const toLoad = [
     {
       name: 'jump',
-      src: ['/assets/audio/jump.mp3']
+      src: [import.meta.env.BASE_URL + 'assets/sounds/jump.mp3']
     },
     {
       name: 'collision',
-      src: ['/assets/audio/collision.mp3']
+      src: [import.meta.env.BASE_URL + 'assets/sounds/collision.mp3']
     }
     // Add other sounds here
   ];
