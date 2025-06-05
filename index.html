@@ -8,9 +8,8 @@
     />
     <title>Dino Runner 3D</title>
 
-    <!-- Error tracking script to help with debugging -->
+    <!-- Debug Console for Error Tracking -->
     <script>
-      // Create a visual console logger
       window.addEventListener('DOMContentLoaded', function () {
         const debugConsole = document.createElement('div');
         debugConsole.id = 'debug-console';
@@ -101,7 +100,9 @@
     </script>
   </head>
   <body>
-    <!-- Vite will automatically replace this with the correct <script> tags on build -->
+    <!-- Vite injects the correct script tags on build.
+         DO NOT manually modify the src path for production.
+         Always run with "npm run dev" (for local) or deploy the "dist/" folder. -->
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
