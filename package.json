@@ -8,7 +8,6 @@
     "prebuild": "rimraf dist",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && gh-pages -d dist",
     "deploy:netlify": "npm run build",
     "serve": "npm run build && npm run preview"
   },
