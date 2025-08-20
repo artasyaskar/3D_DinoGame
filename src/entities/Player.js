@@ -88,6 +88,19 @@ export class Player {
     if (size.y > 0) {
       const scale = targetHeight / size.y;
       model.scale.multiplyScalar(scale);
+      // On small portrait screens, shrink aggressively so the dino fully fits
+      const w = (typeof window !== 'undefined') ? window.innerWidth : 1024;
+      const h = (typeof window !== 'undefined') ? window.innerHeight : 768;
+      const aspect = w / Math.max(1, h);
+      const minDim = Math.min(w, h);
+      const portrait = h >= w;
+      if (portrait && minDim <= 820) {
+        // Tiered multiplier: ultra-small phones get more shrink
+        let mul = 0.85; // default extra shrink
+        if (minDim <= 480 || aspect < 0.55) mul = 0.72; // very small/narrow screens
+        else if (minDim <= 720) mul = 0.78;
+        model.scale.multiplyScalar(mul);
+      }
       this._baseModelScale = model.scale.clone();
     }
 

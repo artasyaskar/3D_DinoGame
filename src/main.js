@@ -93,6 +93,12 @@ async function init() {
   game.onResize();
 
   window.addEventListener('resize', () => game.onResize());
+  // Also observe container size changes (mobile browser UI collapsing/expanding)
+  const containerEl = document.getElementById('game-container');
+  if (window.ResizeObserver && containerEl) {
+    const ro = new ResizeObserver(() => game.onResize());
+    ro.observe(containerEl);
+  }
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
       if (e.repeat) return; // ignore auto-repeat
@@ -129,6 +135,47 @@ async function init() {
   container.addEventListener('pointerdown', onPointerDown, { passive: true });
   container.addEventListener('pointerup', onPointerUp, { passive: true });
   container.addEventListener('pointercancel', onPointerUp, { passive: true });
+
+  // Swipe gestures: swipe down to duck (hold while swiping), swipe up to jump
+  let _swipeStart = null;
+  const SWIPE_MIN = 24; // px threshold
+  container.addEventListener('touchstart', (e) => {
+    if (!e.touches || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    _swipeStart = { x: t.clientX, y: t.clientY, time: performance.now() };
+  }, { passive: true });
+  container.addEventListener('touchmove', (e) => {
+    if (!game || !game.isRunning) return;
+    if (!_swipeStart || !e.touches || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dy = t.clientY - _swipeStart.y;
+    // If swiping down beyond threshold, engage duck
+    if (dy > SWIPE_MIN) {
+      game.player?.setDuck(true);
+    }
+  }, { passive: true });
+  const endSwipe = (e) => {
+    if (!game || !game.isRunning) { _swipeStart = null; return; }
+    if (_swipeStart) {
+      // Evaluate final direction for quick swipe up
+      const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
+      if (t) {
+        const dy = t.clientY - _swipeStart.y;
+        if (dy < -SWIPE_MIN) {
+          // Swipe up -> jump (supports boosted logic via double tap already)
+          const now = performance.now();
+          const boosted = (now - _lastPointerTap) <= BOOST_WINDOW;
+          _lastPointerTap = now;
+          game.jump(boosted ? BOOST_MULT : 1);
+        }
+      }
+    }
+    // Always release duck on touch end
+    game.player?.setDuck(false);
+    _swipeStart = null;
+  };
+  container.addEventListener('touchend', endSwipe, { passive: true });
+  container.addEventListener('touchcancel', endSwipe, { passive: true });
 
   // Handle orientation changes explicitly
   window.addEventListener('orientationchange', () => setTimeout(() => game.onResize(), 50));

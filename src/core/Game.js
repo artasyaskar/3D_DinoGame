@@ -29,7 +29,9 @@ export class Game {
     // Darker base background; main backdrop is handled by BackgroundSystem
     this.scene.background = new THREE.Color(0x0f172a);
 
-    const { clientWidth: w, clientHeight: h } = container;
+    const rect0 = container.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect0.width || container.clientWidth));
+    const h = Math.max(1, Math.round(rect0.height || container.clientHeight));
     this.unitsHigh = 16; // further reduce to enlarge perceived scale
     this.laneX = 0; // camera lane center for side view
     this._setupOrthoCamera(w / h);
@@ -208,10 +210,11 @@ export class Game {
     const halfW = halfH * aspect;
     this.camera = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.1, 200);
     // Chrome dino-style side view: camera positioned to show side profile
-    // Place camera center so the player (x≈-5) sits comfortably inside view even on tall phones
-    // When player not yet created, assume player at -5 and put it ~60% from the left
+    // Place camera center so the player sits ~35% from the left (NDC ~ -0.35)
+    // When player not yet created, assume player at -5 and compute bias accordingly
+    // For orthographic: NDC_x = (player.x - laneX) / halfW -> laneX = player.x + 0.35*halfW
     const assumedPlayerX = -5;
-    this.laneX = assumedPlayerX + 0.6 * halfW;
+    this.laneX = assumedPlayerX + 0.35 * halfW;
     this.camera.position.set(this.laneX, 2.0, 8);
     this.camera.lookAt(new THREE.Vector3(this.laneX, 1.0, 0));
   }
@@ -254,6 +257,13 @@ export class Game {
       // Player
       this.player = new Player(this.scene, this.loader, this.sounds, this.particles);
       await this.player.load('/models/dino.glb');
+      // After player loads, refine vertical framing to player's center
+      try {
+        const box = new THREE.Box3().setFromObject(this.player.object);
+        const center = box.getCenter(new THREE.Vector3());
+        // Keep a comfortable headroom; clamp to sensible range
+        this._camTargetY = THREE.MathUtils.clamp(center.y, 1.6, 3.2);
+      } catch (e) { /* no-op */ }
 
       // For orthographic side camera we keep a fixed framing (no auto-zoom)
       if (this.camera.isOrthographicCamera) {
@@ -344,23 +354,47 @@ export class Game {
   setJumpHeld(held) { this.player?.setJumpHeld?.(held); }
 
   onResize() {
-    const { clientWidth: w, clientHeight: h } = this.container;
+    const rect = this.container.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width || this.container.clientWidth));
+    const h = Math.max(1, Math.round(rect.height || this.container.clientHeight));
     if (this.camera.isPerspectiveCamera) {
       this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
     } else if (this.camera.isOrthographicCamera) {
       const aspect = w / h;
-      const unitsHigh = this.unitsHigh || 8;
-      const halfH = unitsHigh * 0.5;
+      let halfH;
+      // If we have the player, compute a frustum that fits ground and head with margins
+      if (this.player?.object) {
+        const box = new THREE.Box3().setFromObject(this.player.object);
+        const headY = box.max.y; // feet are grounded near y=0
+        // Slightly larger safety margins for mobile portrait devices
+        const topMargin = aspect < 0.75 ? 0.8 : 0.6;   // extra space above head
+        const bottomMargin = aspect < 0.75 ? 0.4 : 0.3; // space below ground band
+        // We want [_camTargetY - halfH, _camTargetY + halfH] to include [-bottomMargin, headY + topMargin]
+        const needTop = headY + topMargin - this._camTargetY;
+        const needBottom = this._camTargetY + bottomMargin;
+        halfH = Math.max(4.2, needTop, needBottom);
+        // Apply a portrait compensation factor so the subject is never clipped
+        let units = halfH * 2;
+        const portraitBoost = aspect < 0.65 ? 1.25 : (aspect < 0.85 ? 1.12 : 1.0);
+        units *= portraitBoost;
+        // Clamp overall units to avoid extreme zooming
+        this.unitsHigh = THREE.MathUtils.clamp(units, 12, 36);
+      } else {
+        // Fallback: gently zoom out on tall phones
+        const add = Math.max(0, Math.min(12, (0.85 - Math.min(0.85, aspect)) * 16));
+        this.unitsHigh = 16 + add;
+      }
+      halfH = this.unitsHigh * 0.5;
       const halfW = halfH * aspect;
       this.camera.left = -halfW;
       this.camera.right = halfW;
       this.camera.top = halfH;
       this.camera.bottom = -halfH;
       this.camera.updateProjectionMatrix();
-      // Keep the player visible on tall mobile by centering with a left bias
+      // Keep the player visible with a left bias (~33% from left)
       const px = this.player?.object?.position?.x ?? -5;
-      this.laneX = px + 0.6 * halfW; // ~40% of screen to the left of player
+      this.laneX = px + 0.33 * halfW;
     }
     // Update DPR on resize to handle zoom/orientation changes
     const isSmallScreen = Math.min(window.innerWidth || w, window.innerHeight || h) <= 768;
