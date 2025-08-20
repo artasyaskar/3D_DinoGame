@@ -57,7 +57,7 @@ export class Game {
     this.renderer = new THREE.WebGLRenderer({ canvas, context: gl });
     // Slightly lower DPR cap on small/mobile screens to improve performance
     const isSmallScreen = Math.min(window.innerWidth || w, window.innerHeight || h) <= 768;
-    const dprCap = isSmallScreen ? 1.5 : 2;
+    const dprCap = isSmallScreen ? 1.25 : 1.75;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
     this.renderer.setSize(w, h);
     // Disable all shadow mapping to avoid any darkening
@@ -162,6 +162,9 @@ export class Game {
     this._shakeDur = 0;
     this._shakeAmp = 0;
     this._shakePhase = Math.random() * Math.PI * 2;
+
+    // Post-resize auto-fit frames to ensure proper vertical fit on mobile
+    this._fitFramesRemaining = 0;
 
     // Camera defaults (Chrome Dino style side view)
     this._camTargetY = 2.2; // fixed vertical framing
@@ -363,29 +366,48 @@ export class Game {
     } else if (this.camera.isOrthographicCamera) {
       const aspect = w / h;
       let halfH;
+      // Track vertical bounds if we have the player
+      let _top = null, _bottom = null;
       // If we have the player, compute a frustum that fits ground and head with margins
       if (this.player?.object) {
         const box = new THREE.Box3().setFromObject(this.player.object);
         const headY = box.max.y; // feet are grounded near y=0
         // Slightly larger safety margins for mobile portrait devices
-        const topMargin = aspect < 0.75 ? 0.8 : 0.6;   // extra space above head
-        const bottomMargin = aspect < 0.75 ? 0.4 : 0.3; // space below ground band
-        // We want [_camTargetY - halfH, _camTargetY + halfH] to include [-bottomMargin, headY + topMargin]
-        const needTop = headY + topMargin - this._camTargetY;
-        const needBottom = this._camTargetY + bottomMargin;
-        halfH = Math.max(4.2, needTop, needBottom);
-        // Apply a portrait compensation factor so the subject is never clipped
-        let units = halfH * 2;
-        const portraitBoost = aspect < 0.65 ? 1.25 : (aspect < 0.85 ? 1.12 : 1.0);
+        const topMargin = aspect < 0.6 ? 1.2 : (aspect < 0.8 ? 1.0 : 0.7);   // extra space above head
+        const bottomMargin = aspect < 0.6 ? 0.6 : (aspect < 0.8 ? 0.5 : 0.35); // space below ground band
+        const top = headY + topMargin;
+        const bottom = -bottomMargin;
+        _top = top; _bottom = bottom;
+        // Compute desired center so ground (y=0) appears ~18% from bottom of screen
+        // For ortho, frustum is [centerY - halfH, centerY + halfH]
+        // We want 0 to be at bottom + 0.18 * unitsHigh => centerY = halfH - 0.18 * unitsHigh
+        // We'll clamp later to ensure head/top remain visible.
+        // Frustum height covers full range with possible boost for tall portrait screens
+        let units = (top - bottom);
+        const portraitBoost = aspect < 0.55 ? 1.5 : (aspect < 0.8 ? 1.25 : 1.0);
         units *= portraitBoost;
-        // Clamp overall units to avoid extreme zooming
-        this.unitsHigh = THREE.MathUtils.clamp(units, 12, 36);
+        // Minimum world height to keep sense of scale
+        this.unitsHigh = THREE.MathUtils.clamp(units, 12, 38);
+        // Balanced global zoom-out for portrait so dino is small but readable
+        let minUnits = 36;
+        if (aspect < 1.0) minUnits = Math.max(minUnits, 40);
+        if (aspect < 0.75) minUnits = Math.max(minUnits, 46);
+        if (aspect < 0.6) minUnits = Math.max(minUnits, 52);
+        // Optional override via localStorage: localStorage.setItem('dino.minUnits', '48')
+        const lsMin = Number(localStorage.getItem('dino.minUnits'));
+        if (!Number.isNaN(lsMin) && lsMin > 0) minUnits = lsMin;
+        this.unitsHigh = Math.max(this.unitsHigh, minUnits);
       } else {
         // Fallback: gently zoom out on tall phones
         const add = Math.max(0, Math.min(12, (0.85 - Math.min(0.85, aspect)) * 16));
         this.unitsHigh = 16 + add;
       }
       halfH = this.unitsHigh * 0.5;
+      // Apply ground bias center while ensuring top/bottom bounds are respected
+      const desiredCenter = halfH - 0.18 * (this.unitsHigh);
+      // Ensure head/top still visible when we have bounds
+      const minCenter = (_top !== null && _bottom !== null) ? ((_top + _bottom) * 0.5) : desiredCenter;
+      this._camTargetY = Math.max(minCenter, desiredCenter);
       const halfW = halfH * aspect;
       this.camera.left = -halfW;
       this.camera.right = halfW;
@@ -398,10 +420,12 @@ export class Game {
     }
     // Update DPR on resize to handle zoom/orientation changes
     const isSmallScreen = Math.min(window.innerWidth || w, window.innerHeight || h) <= 768;
-    const dprCap = isSmallScreen ? 1.5 : 2;
+    const dprCap = isSmallScreen ? 1.25 : 1.75;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
     this.renderer.setSize(w, h);
     this.postFX?.onResize(w, h);
+    // Run a moderate auto-fit after resize to catch mobile UI changes
+    this._fitFramesRemaining = 32;
   }
 
   toggleMute() {
@@ -504,6 +528,31 @@ export class Game {
       }
       this.camera.position.set(this.laneX + offX, this._camTargetY + offY, this._camZ);
       this.camera.lookAt(new THREE.Vector3(this.laneX, this._camTargetY - 0.25, 0));
+    }
+
+    // After a resize, for a few frames, ensure the player fits vertically
+    if (this._fitFramesRemaining > 0 && this.player?.object && this.camera.isOrthographicCamera) {
+      const rect = this.container.getBoundingClientRect();
+      const aspect = Math.max(1, Math.round(rect.width || this.container.clientWidth)) / Math.max(1, Math.round(rect.height || this.container.clientHeight));
+      const box = new THREE.Box3().setFromObject(this.player.object);
+      const headY = box.max.y;
+      const topMargin = aspect < 0.6 ? 1.2 : (aspect < 0.8 ? 1.0 : 0.7);
+      const bottomMargin = aspect < 0.6 ? 0.6 : (aspect < 0.8 ? 0.5 : 0.35);
+      const top = headY + topMargin;
+      const bottom = -bottomMargin;
+      const mid = (top + bottom) * 0.5;
+      const targetUnits = (top - bottom) * (aspect < 0.55 ? 1.5 : (aspect < 0.8 ? 1.25 : 1.0));
+      if (this.unitsHigh < targetUnits - 0.01) {
+        // Expand quickly to avoid any clipping
+        this.unitsHigh = THREE.MathUtils.clamp(THREE.MathUtils.lerp(this.unitsHigh, targetUnits, 0.6), 12, 40);
+        const halfH = this.unitsHigh * 0.5;
+        const halfW = halfH * aspect;
+        this.camera.left = -halfW; this.camera.right = halfW;
+        this.camera.top = halfH; this.camera.bottom = -halfH;
+        this.camera.updateProjectionMatrix();
+      }
+      this._camTargetY = mid;
+      this._fitFramesRemaining--;
     }
 
     // Keep player bbox helper synced for accurate diagnostics

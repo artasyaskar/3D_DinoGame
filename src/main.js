@@ -123,7 +123,8 @@ async function init() {
 
   // Simple mobile/desktop pointer: tap/click anywhere in container to jump
   const container = document.getElementById('game-container');
-  const onPointerDown = () => {
+  const onPointerDown = (e) => {
+    if (e && e.pointerType === 'touch') return; // touch has its own handlers
     if (!game || !game.isRunning || game.isPaused) return;
     const now = performance.now();
     const boosted = (now - _lastPointerTap) <= BOOST_WINDOW;
@@ -131,7 +132,7 @@ async function init() {
     game.jump(boosted ? BOOST_MULT : 1);
     game.setJumpHeld(true);
   };
-  const onPointerUp = () => { game?.setJumpHeld(false); };
+  const onPointerUp = (e) => { if (e && e.pointerType === 'touch') return; game?.setJumpHeld(false); };
   container.addEventListener('pointerdown', onPointerDown, { passive: true });
   container.addEventListener('pointerup', onPointerUp, { passive: true });
   container.addEventListener('pointercancel', onPointerUp, { passive: true });

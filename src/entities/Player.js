@@ -96,10 +96,13 @@ export class Player {
       const portrait = h >= w;
       if (portrait && minDim <= 820) {
         // Tiered multiplier: ultra-small phones get more shrink
-        let mul = 0.85; // default extra shrink
-        if (minDim <= 480 || aspect < 0.55) mul = 0.72; // very small/narrow screens
-        else if (minDim <= 720) mul = 0.78;
+        let mul = 0.82; // default extra shrink
+        if (minDim <= 480 || aspect < 0.55) mul = 0.68; // very small/narrow screens
+        else if (minDim <= 720) mul = 0.75;
         model.scale.multiplyScalar(mul);
+      } else if (!portrait && h <= 360) {
+        // Extremely short landscape screens: apply a small shrink
+        model.scale.multiplyScalar(0.92);
       }
       this._baseModelScale = model.scale.clone();
     }

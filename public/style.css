@@ -71,6 +71,8 @@ body::after {
 
 canvas {
   display: block;
+  position: absolute;
+  inset: 0;
   width: 100% !important;
   height: 100% !important;
 }
@@ -85,6 +87,7 @@ canvas {
   display: flex;
   gap: 18px;
   align-items: center;
+  flex-wrap: wrap; /* allow wrapping on narrow screens */
   background: var(--glass);
   padding: calc(10px + env(safe-area-inset-top) * 0.25) 14px 10px 14px;
   border-radius: 14px;
@@ -98,7 +101,7 @@ canvas {
 /* Difficulty label style */
 .hud .diff span { opacity: 0.75; font-size: 12px; letter-spacing: 0.2px; }
 
-.hud .score { font-weight: 800; letter-spacing: 0.3px; }
+.hud .score { font-weight: 800; letter-spacing: 0.3px; font-size: clamp(12px, 3.2vw, 16px); }
 .hud .hint  { opacity: 0.8; font-size: 12px; }
 .hud .diff  { display:flex; align-items:center; gap:8px; }
 
@@ -156,7 +159,7 @@ button:focus-visible, .owner-badge:focus-visible, .hud:focus-visible {
 }
 
 /* Center overlays */
-.center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 20; }
 .center .overlay {
   pointer-events: auto;
   text-align: center;
@@ -273,6 +276,29 @@ button:focus-visible, .owner-badge:focus-visible, .hud:focus-visible {
   .subtitle { font-size: 14px; }
   .btns { gap: 10px; }
   button { padding: 12px 16px; font-size: 15px; }
+  /* De-emphasize hint on smaller screens */
+  .hud .hint { font-size: 11px; opacity: 0.7; }
+}
+
+/* Phone width */
+@media (max-width: 480px) {
+  .hud { gap: 8px; padding: 8px 10px; }
+  .hud .score { font-size: clamp(11px, 3.6vw, 14px); }
+  .hud .hint { display: none; } /* hide long hint to avoid overlap */
+  .diff-bar { width: 92px; height: 5px; }
+  .owner-badge { width: 40px; height: 40px; top: 12px; right: 12px; }
+  .center .overlay { width: min(94vw, 600px); padding: 24px 22px; }
+  .subtitle { font-size: 13px; }
+  button { padding: 11px 14px; font-size: 14px; }
+}
+
+/* Very narrow phones */
+@media (max-width: 360px) {
+  .hud { gap: 6px; }
+  .hud .score { font-size: 12px; }
+  .diff-bar { width: 80px; }
+  .center .overlay { padding: 20px 18px; }
+  .title { font-size: clamp(22px, 7vw, 30px); }
 }
 
 /* Motion accessibility */
