@@ -4,11 +4,24 @@ import { Game } from './core/Game.js';
 const startBtn = document.getElementById('start-btn');
 const restartBtn = document.getElementById('restart-btn');
 const resumeBtn = document.getElementById('resume-btn');
+const shareBtn = document.getElementById('share-btn');
 const muteBtn = document.getElementById('mute-btn');
 const startScreen = document.getElementById('start-screen');
 const gameoverScreen = document.getElementById('gameover-screen');
 const pauseScreen = document.getElementById('pause-screen');
 const helpersBtn = document.getElementById('helpers-btn');
+// Share menu elements (fallback UI)
+const shareMenu = document.getElementById('share-menu');
+const shareCloseBtn = document.getElementById('share-close-btn');
+const shareLinks = {
+  whatsapp: document.getElementById('share-whatsapp'),
+  telegram: document.getElementById('share-telegram'),
+  facebook: document.getElementById('share-facebook'),
+  twitter: document.getElementById('share-twitter'),
+  linkedin: document.getElementById('share-linkedin'),
+  reddit: document.getElementById('share-reddit')
+};
+const copyLinkBtn = document.getElementById('share-copy');
 
 const scoreEl = document.getElementById('score');
 const finalScoreEl = document.getElementById('final-score');
@@ -17,11 +30,13 @@ const diffFill = document.getElementById('diff-fill');
 const flashEl = document.getElementById('flash');
 
 let game;
-// Double-tap detection state
+// Tap/double-tap detection and jump strengths
 let _lastKeyTap = 0;
 let _lastPointerTap = 0;
-const BOOST_WINDOW = 280; // ms (slightly longer for reliability)
-const BOOST_MULT = 1.35;  // boosted jump height
+let _lastTouchTap = 0;
+const BOOST_WINDOW = 260;      // ms window for double taps
+const JUMP_SINGLE = 1.35;      // strong jump
+const JUMP_DOUBLE = 1.75;      // strongest jump
 
 function hide(el){ el.classList.add('hidden'); }
 function show(el){ el.classList.remove('hidden'); }
@@ -105,7 +120,7 @@ async function init() {
       const now = performance.now();
       const boosted = (now - _lastKeyTap) <= BOOST_WINDOW;
       _lastKeyTap = now;
-      game?.jump(boosted ? BOOST_MULT : 1);
+      game?.jump(boosted ? JUMP_DOUBLE : JUMP_SINGLE);
       game?.setJumpHeld(true);
     } else if (e.code === 'KeyP') {
       if (game?.isPaused) game.resume(); else game.pause();
@@ -129,7 +144,7 @@ async function init() {
     const now = performance.now();
     const boosted = (now - _lastPointerTap) <= BOOST_WINDOW;
     _lastPointerTap = now;
-    game.jump(boosted ? BOOST_MULT : 1);
+    game.jump(boosted ? JUMP_DOUBLE : JUMP_SINGLE);
     game.setJumpHeld(true);
   };
   const onPointerUp = (e) => { if (e && e.pointerType === 'touch') return; game?.setJumpHeld(false); };
@@ -139,7 +154,9 @@ async function init() {
 
   // Swipe gestures: swipe down to duck (hold while swiping), swipe up to jump
   let _swipeStart = null;
-  const SWIPE_MIN = 24; // px threshold
+  const SWIPE_MIN = 24; // px threshold for swipe detection
+  const TAP_MOVE_MAX = 16; // px movement to still consider a tap
+  const TAP_TIME_MAX = 280; // ms
   container.addEventListener('touchstart', (e) => {
     if (!e.touches || e.touches.length !== 1) return;
     const t = e.touches[0];
@@ -157,18 +174,25 @@ async function init() {
   }, { passive: true });
   const endSwipe = (e) => {
     if (!game || !game.isRunning) { _swipeStart = null; return; }
-    if (_swipeStart) {
-      // Evaluate final direction for quick swipe up
-      const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
-      if (t) {
-        const dy = t.clientY - _swipeStart.y;
-        if (dy < -SWIPE_MIN) {
-          // Swipe up -> jump (supports boosted logic via double tap already)
-          const now = performance.now();
-          const boosted = (now - _lastPointerTap) <= BOOST_WINDOW;
-          _lastPointerTap = now;
-          game.jump(boosted ? BOOST_MULT : 1);
-        }
+    const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
+    if (_swipeStart && t) {
+      const dx = t.clientX - _swipeStart.x;
+      const dy = t.clientY - _swipeStart.y;
+      const dist2 = dx*dx + dy*dy;
+      const dt = performance.now() - _swipeStart.time;
+      const isTap = dist2 <= (TAP_MOVE_MAX*TAP_MOVE_MAX) && dt <= TAP_TIME_MAX;
+      if (isTap) {
+        // Single tap -> strong jump; double tap within window -> strongest
+        const now = performance.now();
+        const boosted = (now - _lastTouchTap) <= BOOST_WINDOW;
+        _lastTouchTap = now;
+        game.jump(boosted ? JUMP_DOUBLE : JUMP_SINGLE);
+      } else if (dy < -SWIPE_MIN) {
+        // Swipe up -> strong jump
+        const now = performance.now();
+        const boosted = (now - _lastTouchTap) <= BOOST_WINDOW;
+        _lastTouchTap = now;
+        game.jump(boosted ? JUMP_DOUBLE : JUMP_SINGLE);
       }
     }
     // Always release duck on touch end
@@ -196,11 +220,79 @@ restartBtn.addEventListener('click', async () => {
   await game.restart();
 });
 
+shareBtn.addEventListener('click', async () => {
+  const score = finalScoreEl.textContent;
+  const shareUrl = 'https://3-d-dino-game.vercel.app/';
+  const text = `I scored ${score} in 3D Dino Game! Can you beat my score?`;
+  const title = '3D Dino Game';
+
+  // Prefer native share sheet when available
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url: shareUrl });
+      return;
+    } catch (err) {
+      // If user cancels, just return silently; otherwise, fall through to fallback UI
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+
+  // Fallback: populate platform links and show our mini share menu
+  const encodedText = encodeURIComponent(text);
+  const encodedUrl = encodeURIComponent(shareUrl);
+
+  if (shareLinks.whatsapp) shareLinks.whatsapp.href = `https://api.whatsapp.com/send?text=${encodedText}%20${encodedUrl}`;
+  if (shareLinks.telegram) shareLinks.telegram.href = `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`;
+  if (shareLinks.facebook) shareLinks.facebook.href = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
+  if (shareLinks.twitter) shareLinks.twitter.href = `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`;
+  if (shareLinks.linkedin) shareLinks.linkedin.href = `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`;
+  if (shareLinks.reddit) shareLinks.reddit.href = `https://www.reddit.com/submit?url=${encodedUrl}&title=${encodedText}`;
+
+  if (copyLinkBtn) {
+    copyLinkBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        copyLinkBtn.textContent = 'Copied!';
+        setTimeout(() => (copyLinkBtn.textContent = 'Copy Link'), 1200);
+      } catch {
+        alert('Copy failed. You can manually copy: ' + shareUrl);
+      }
+    };
+  }
+
+  if (shareMenu) {
+    shareMenu.classList.remove('hidden');
+    // Close on outside click
+    const onOutside = (e) => {
+      if (!shareMenu.contains(e.target)) {
+        shareMenu.classList.add('hidden');
+        document.removeEventListener('mousedown', onOutside);
+        document.removeEventListener('touchstart', onOutside);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('mousedown', onOutside, { passive: true });
+      document.addEventListener('touchstart', onOutside, { passive: true });
+    }, 0);
+  }
+});
+
 resumeBtn.addEventListener('click', () => {
   game.resume();
 });
 
-muteBtn.addEventListener('click', () => {
-  const muted = game.toggleMute();
-  muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+muteBtn.addEventListener('click', async () => {
+  // Ensure game exists so we don't call on undefined
+  if (!game) {
+    await init();
+  }
+  const muted = game?.toggleMute?.();
+  if (typeof muted === 'boolean') {
+    muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+  }
+});
+
+// Close button for share menu
+shareCloseBtn?.addEventListener('click', () => {
+  shareMenu?.classList.add('hidden');
 });

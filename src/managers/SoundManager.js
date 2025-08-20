@@ -67,9 +67,14 @@ export class SoundManager {
   toggleMute() {
     this.muted = !this.muted;
     if (this.muted) {
+      // Pause everything immediately
       this.bgm?.pause();
       this.sfx.rain?.pause();
+      this.sfx.jump?.pause?.();
+      this.sfx.hit?.pause?.();
+      this.sfx.coin?.pause?.();
     } else {
+      // Resume ambient loops only if appropriate; SFX will play on next events
       this.playBgm();
       if (this.sfx.rain && this.sfx.rain.volume > 0.001) {
         this.sfx.rain.play().catch(()=>{});

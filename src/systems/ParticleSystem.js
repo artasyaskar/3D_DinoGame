@@ -9,9 +9,9 @@ export class ParticleSystem {
     this._dustTex = this._makeSoftCircleTexture();
   }
 
-  spawnSparkleAt(x, y = 1.0, z = 0, count = 10) {
+  spawnSparkleAt(x, y = 1.0, z = 0, count = 15) {
     for (let i = 0; i < count; i++) {
-      const size = 0.08 + Math.random() * 0.12;
+      const size = 0.1 + Math.random() * 0.15;
       const geo = new THREE.PlaneGeometry(1, 1);
       const mat = new THREE.MeshBasicMaterial({
         map: this._dustTex,
@@ -121,6 +121,42 @@ export class ParticleSystem {
         endSize: size * 0.1,
       });
     }
+  }
+
+  spawnJumpParticles(x, z, count = 5) {
+    for (let i = 0; i < count; i++) {
+      const size = 0.15 + Math.random() * 0.2;
+      const geo = new THREE.PlaneGeometry(1, 1);
+      const mat = new THREE.MeshBasicMaterial({
+        map: this._dustTex,
+        transparent: true,
+        color: new THREE.Color(0xffffff), // white particles
+        opacity: 0.0,
+        depthWrite: false,
+        blending: THREE.NormalBlending,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(x + (Math.random() * 0.4 - 0.2), 0.02, z + (Math.random() * 0.4 - 0.2));
+      this.group.add(mesh);
+
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1.0 + Math.random() * 1.5;
+      const vel = new THREE.Vector3(Math.cos(angle) * speed, 3.0 + Math.random() * 2.0, Math.sin(angle) * speed);
+
+      this.particles.push({
+        mesh,
+        vel,
+        life: 0,
+        maxLife: 0.4 + Math.random() * 0.2,
+        startSize: size,
+        endSize: size * 0.1,
+      });
+    }
+  }
+
+  spawnLandParticles(x, z, count = 8) {
+    this.spawnDustAt(x, z, count);
   }
 
   update(dt) {

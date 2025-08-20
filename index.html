@@ -14,16 +14,32 @@
   <div id="game-container">
     <div id="flash"></div>
     <div class="hud">
-      <div class="score">Score: <span id="score">0</span></div>
-      <div class="score">High: <span id="high-score">0</span></div>
-      <div class="diff"><span style="opacity:.7;font-size:12px;">Difficulty</span><div class="diff-bar"><div id="diff-fill" class="diff-fill"></div></div></div>
-      <div class="hint">Space/Up/W to jump • Tap/Click to jump • P to pause • H helpers</div>
-      <button id="helpers-btn" class="secondary">Helpers</button>
+      <div class="score" data-label="Score"><span id="score">0</span></div>
+      <div class="score" data-label="High"><span id="high-score">0</span></div>
+      <div class="diff" data-label="Difficulty"><div class="diff-bar"><div id="diff-fill" class="diff-fill"></div></div></div>
+      <div class="hint">Tap/Click to jump • P to pause</div>
+      <button id="helpers-btn" class="secondary" style="display:none">Helpers</button>
     </div>
     <div class="center">
       <div id="start-screen" class="overlay visible">
         <div class="title">3D Dino Game</div>
-        <div class="subtitle">Endless runner. Avoid obstacles. Collect coins.</div>
+        <div class="how-to-play">
+          <div class="how-to-play-title">How to Play</div>
+          <div class="controls">
+            <div class="control-item">
+              <div class="control-key">Space / Up / W</div>
+              <div class="control-label">Jump</div>
+            </div>
+            <div class="control-item">
+              <div class="control-key">Tap / Click</div>
+              <div class="control-label">Jump</div>
+            </div>
+            <div class="control-item">
+              <div class="control-key">P</div>
+              <div class="control-label">Pause</div>
+            </div>
+          </div>
+        </div>
         <div class="btns">
           <button id="start-btn">Start</button>
           <button id="mute-btn" class="secondary">Mute</button>
@@ -31,9 +47,36 @@
       </div>
       <div id="gameover-screen" class="overlay hidden">
         <div class="title">Game Over</div>
-        <div class="subtitle">Your Score: <span id="final-score">0</span> • Best: <span id="final-high-score">0</span></div>
+        <div class="scores">
+          <div class="score-item">
+            <div class="score-label">Your Score</div>
+            <div id="final-score" class="score-value">0</div>
+          </div>
+          <div class="score-item">
+            <div class="score-label">Best Score</div>
+            <div id="final-high-score" class="score-value">0</div>
+          </div>
+        </div>
         <div class="btns">
           <button id="restart-btn">Play Again</button>
+          <button id="share-btn" class="secondary">Share</button>
+        </div>
+      </div>
+      <!-- Share overlay (shown if Web Share API not available) -->
+      <div id="share-menu" class="overlay hidden">
+        <div class="title">Share your score</div>
+        <div class="subtitle">Choose a platform</div>
+        <div class="share-grid">
+          <a id="share-whatsapp" href="#" target="_blank" rel="noopener">WhatsApp</a>
+          <a id="share-telegram" href="#" target="_blank" rel="noopener">Telegram</a>
+          <a id="share-facebook" href="#" target="_blank" rel="noopener">Facebook</a>
+          <a id="share-twitter" href="#" target="_blank" rel="noopener">X / Twitter</a>
+          <a id="share-linkedin" href="#" target="_blank" rel="noopener">LinkedIn</a>
+          <a id="share-reddit" href="#" target="_blank" rel="noopener">Reddit</a>
+        </div>
+        <div class="btns">
+          <button id="share-copy" class="secondary">Copy Link</button>
+          <button id="share-close-btn" class="secondary">Close</button>
         </div>
       </div>
       <div id="pause-screen" class="overlay hidden">
@@ -43,7 +86,7 @@
       </div>
     </div>
   </div>
-  <div class="owner-badge" data-tip="Game by AY"><span>AY</span></div>
+  <div class="owner-badge" data-tip="Game by ARTAS YASKAR"><span>AY</span></div>
   <!-- Vite handles bare module imports (three, three/examples/jsm) from node_modules -->
   <script type="module" src="./src/main.js"></script>
 </body>

@@ -156,6 +156,9 @@ export class Game {
     this.difficultyTimer = 0;
     this.timePlayed = 0;
     this._difficulty = 0; // 0..1
+    this.hasStumbled = false;
+    this.isStumbling = false;
+    this.stumbleCooldown = 0;
 
     // Camera shake state
     this._shakeTime = 0;
@@ -179,6 +182,23 @@ export class Game {
     // Helpers state and global key bindings (H helpers, B toggle bg)
     this._helpers = { axes: null, grid: null, boxes: [] };
     this._bgVisible = true;
+    // Desktop-only entity scale: make dino and obstacles slightly larger on non-touch desktop
+    this._isDesktopWindows = false;
+    this._entityScale = (() => {
+      try {
+        const w = window.innerWidth || 1024;
+        const h = window.innerHeight || 768;
+        const minDim = Math.min(w, h);
+        const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        const ua = (navigator.userAgent || '').toLowerCase();
+        const plat = (navigator.platform || '').toLowerCase();
+        const isWindows = ua.includes('windows') || plat.startsWith('win');
+        // Only enlarge on Windows desktop (non-touch) with reasonably large viewport
+        const isDesktopWindows = isWindows && !isTouch && minDim >= 720;
+        this._isDesktopWindows = isDesktopWindows;
+        return isDesktopWindows ? 2.55 : 1.0; // slightly larger on Windows desktop only
+      } catch { return 1.0; }
+    })();
     window.addEventListener('keydown', (e) => {
       const key = (e.key || '').toLowerCase();
       if (e.code === 'KeyH' || key === 'h') {
@@ -259,6 +279,8 @@ export class Game {
 
       // Player
       this.player = new Player(this.scene, this.loader, this.sounds, this.particles);
+      // Pass desktop-only scale before loading so Player can bake it into base scale
+      this.player.globalScale = this._entityScale;
       await this.player.load('/models/dino.glb');
       // After player loads, refine vertical framing to player's center
       try {
@@ -282,6 +304,7 @@ export class Game {
       this.particles = new ParticleSystem(this.scene);
       // Obstacle manager
       this.obstacles = new ObstacleManager(this.scene, this.loader, this.sounds, this.particles);
+      this.obstacles.globalScale = this._entityScale;
       await this.obstacles.prepare({
         cactusUrl: '/models/cactus.glb',
         coinUrl: '/models/coin.glb',
@@ -347,13 +370,22 @@ export class Game {
     this._difficulty = 0;
     this.clock.start();
     this._prevGrounded = true;
+    this.hasStumbled = false;
+    this.isStumbling = false;
+    this.stumbleCooldown = 0;
   }
 
   clearSceneTransient() {
     this.obstacles?.dispose();
   }
 
-  jump(mult = 1) { this.player?.jump(mult); }
+  jump(mult = 1) {
+    this.player?.jump(mult);
+    if (this.particles && this.player.object.position.y < 0.5) {
+      const pos = this.player.object.position;
+      this.particles.spawnJumpParticles(pos.x, pos.z, 5);
+    }
+  }
   setJumpHeld(held) { this.player?.setJumpHeld?.(held); }
 
   onResize() {
@@ -382,21 +414,27 @@ export class Game {
         // For ortho, frustum is [centerY - halfH, centerY + halfH]
         // We want 0 to be at bottom + 0.18 * unitsHigh => centerY = halfH - 0.18 * unitsHigh
         // We'll clamp later to ensure head/top remain visible.
-        // Frustum height covers full range with possible boost for tall portrait screens
+        // Frustum height covers full range; customize per platform
         let units = (top - bottom);
-        const portraitBoost = aspect < 0.55 ? 1.5 : (aspect < 0.8 ? 1.25 : 1.0);
-        units *= portraitBoost;
-        // Minimum world height to keep sense of scale
-        this.unitsHigh = THREE.MathUtils.clamp(units, 12, 38);
-        // Balanced global zoom-out for portrait so dino is small but readable
-        let minUnits = 36;
-        if (aspect < 1.0) minUnits = Math.max(minUnits, 40);
-        if (aspect < 0.75) minUnits = Math.max(minUnits, 46);
-        if (aspect < 0.6) minUnits = Math.max(minUnits, 52);
-        // Optional override via localStorage: localStorage.setItem('dino.minUnits', '48')
-        const lsMin = Number(localStorage.getItem('dino.minUnits'));
-        if (!Number.isNaN(lsMin) && lsMin > 0) minUnits = lsMin;
-        this.unitsHigh = Math.max(this.unitsHigh, minUnits);
+        if (this._isDesktopWindows) {
+          // On Windows desktop: do not boost for portrait; keep tighter world height
+          this.unitsHigh = THREE.MathUtils.clamp(units, 10, 24);
+        } else {
+          // Mobile and others: apply portrait boosts and generous minimums
+          const portraitBoost = aspect < 0.55 ? 1.5 : (aspect < 0.8 ? 1.25 : 1.0);
+          units *= portraitBoost;
+          // Minimum world height to keep sense of scale
+          this.unitsHigh = THREE.MathUtils.clamp(units, 12, 38);
+          // Balanced global zoom-out for portrait so dino is small but readable
+          let minUnits = 36;
+          if (aspect < 1.0) minUnits = Math.max(minUnits, 40);
+          if (aspect < 0.75) minUnits = Math.max(minUnits, 46);
+          if (aspect < 0.6) minUnits = Math.max(minUnits, 52);
+          // Optional override via localStorage: localStorage.setItem('dino.minUnits', '48')
+          const lsMin = Number(localStorage.getItem('dino.minUnits'));
+          if (!Number.isNaN(lsMin) && lsMin > 0) minUnits = lsMin;
+          this.unitsHigh = Math.max(this.unitsHigh, minUnits);
+        }
       } else {
         // Fallback: gently zoom out on tall phones
         const add = Math.max(0, Math.min(12, (0.85 - Math.min(0.85, aspect)) * 16));
@@ -453,6 +491,13 @@ export class Game {
     const dt = Math.min(0.033, this.clock.getDelta());
     this.timePlayed += dt;
 
+    if (this.isStumbling) {
+      this.stumbleCooldown -= dt;
+      if (this.stumbleCooldown <= 0) {
+        this.isStumbling = false;
+      }
+    }
+
     // Continuous difficulty 0..1 and speed curve (ease-out)
     // Increase primarily with time, lightly with score
     const t = this.timePlayed;
@@ -463,7 +508,11 @@ export class Game {
     // Slightly lower baseline and ceiling for a calmer pace
     const base = 5.8, max = 11.5;
     const easeOut = (x)=> 1 - Math.pow(1 - x, 2);
-    this.speed = THREE.MathUtils.lerp(base, max, easeOut(this._difficulty));
+    let currentSpeed = THREE.MathUtils.lerp(base, max, easeOut(this._difficulty));
+    if (this.isStumbling) {
+      currentSpeed *= 0.5;
+    }
+    this.speed = currentSpeed;
     this.obstacles.setSpeed(this.speed);
     this.obstacles.setDifficulty(this._difficulty);
     this.player.setDifficulty?.(this._difficulty);
@@ -480,12 +529,12 @@ export class Game {
     }
     if (!wasGrounded && this.player.isOnGround) {
       // Spawn landing dust at player's approximate feet position
-      this.particles?.spawnDustAt(this.player.object.position.x, this.player.object.position.z, 7);
+      this.particles?.spawnLandParticles(this.player.object.position.x, this.player.object.position.z, 7);
     }
     this.obstacles.update(dt);
     this.particles?.update(dt);
 
-    // Collision checks
+    // Collision checks - immediate game over on hit
     if (this.obstacles.collidesWith(this.player.getCollider())) {
       this.sounds.playHit();
       this.sounds.duck?.(500, 0.18);
@@ -495,10 +544,11 @@ export class Game {
     }
 
     const coinRes = this.obstacles.collectCoins(this.player.getCollider());
-    if (coinRes && coinRes.count > 0) {
+    if (coinRes && (coinRes.regularCoins > 0 || coinRes.powerUpCoins > 0)) {
       this.sounds.playCoin();
-      this.score += 50 * coinRes.count;
-      this.onCoin?.(50 * coinRes.count);
+      const scoreGained = coinRes.regularCoins * 50 + coinRes.powerUpCoins * 250;
+      this.score += scoreGained;
+      this.onCoin?.(scoreGained);
       this.triggerShake(0.06, 0.12);
 
       // Spawn sparkles at each collected coin's position
@@ -577,6 +627,18 @@ export class Game {
   }
 
   getDifficulty(){ return this._difficulty; }
+
+  stumble() {
+    if (this.isStumbling) return;
+
+    this.hasStumbled = true;
+    this.isStumbling = true;
+    this.stumbleCooldown = 1.5;
+
+    this.sounds.playHit();
+    this.triggerShake(0.2, 0.4);
+    this.player.stumble?.();
+  }
 
   triggerShake(strength = 0.2, duration = 0.2) {
     this._shakeAmp = Math.max(this._shakeAmp * 0.5, strength);

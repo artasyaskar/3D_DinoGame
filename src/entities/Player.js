@@ -104,6 +104,9 @@ export class Player {
         // Extremely short landscape screens: apply a small shrink
         model.scale.multiplyScalar(0.92);
       }
+      // Desktop-only enlargement set by Game via this.globalScale (defaults to 1)
+      const gs = (typeof this.globalScale === 'number' && isFinite(this.globalScale)) ? this.globalScale : 1.0;
+      if (gs !== 1.0) model.scale.multiplyScalar(gs);
       this._baseModelScale = model.scale.clone();
     }
 
@@ -214,6 +217,19 @@ export class Player {
     // Make jumps only slightly tighter at higher speeds (keep height playable):
     this._jumpMul = 1 - 0.06 * this._diff; // up to ~6% lower apex
     this._gravMul = 1 + 0.08 * this._diff; // up to ~8% stronger gravity
+  }
+
+  stumble() {
+    const stumbleAction = this._findAction(['stumble', 'hit']);
+    if (stumbleAction) {
+      this._play(stumbleAction, 0.1);
+      setTimeout(() => {
+        const idleAction = this._findAction(['run', 'walk', 'idle']) || this._firstAction();
+        this._play(idleAction, 0.2);
+      }, 1000);
+    } else {
+      console.log("No stumble animation found for the player.");
+    }
   }
 
   update(dt) {

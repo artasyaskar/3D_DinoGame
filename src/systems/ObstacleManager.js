@@ -130,11 +130,13 @@ export class ObstacleManager {
       obj.rotation.y = 0;
     };
 
-    // Balanced sizes relative to player (~0.6u high) — slightly larger for readability
-    normalize(this.cactusProto, 2.2);
+    // Balanced sizes relative to player (~0.6u high)
+    // Apply optional desktop-only enlargement via this.globalScale from Game
+    const gs = (typeof this.globalScale === 'number' && isFinite(this.globalScale)) ? this.globalScale : 1.0;
+    // Cactus and bird scale up on desktop; coins remain the same size
+    normalize(this.cactusProto, 2.2 * gs);
     normalize(this.coinProto, 0.9);
-    // Make bird larger for visibility and closer to cactus readability
-    if (this.birdProto) normalize(this.birdProto, 1.6);
+    if (this.birdProto) normalize(this.birdProto, 1.6 * gs);
   }
 
   setSpeed(v) { this.speed = v; }
@@ -264,43 +266,70 @@ export class ObstacleManager {
   }
 
   _spawnCoinLine() {
-    const baseX = 12 + Math.random()*8;
-    const z = (Math.random()*2-1) * this.zSpread;
+    const baseX = 12 + Math.random() * 8;
+    const z = (Math.random() * 2 - 1) * this.zSpread;
     const created = [];
-
-    // Choose pattern based on difficulty
     const d = this.difficulty;
+  
+    // 10% chance to spawn a single power-up coin instead of a line
+    if (Math.random() < 0.1) {
+      const coin = (this.coinProto ? this.coinProto.clone(true) : this._makeCoinFallback());
+      coin.scale.setScalar(1.5); // Make it bigger
+      const mat = coin.children[0]?.material;
+      if (mat) mat.color.set(0xffd700); // Make it gold
+  
+      const wrap = new THREE.Group();
+      wrap.add(coin);
+  
+      const baseY = 1.2 + Math.random() * 1.4;
+      wrap.position.set(baseX, baseY, z);
+      this.group.add(wrap);
+      created.push({
+        object: wrap,
+        collider: new THREE.Box3().setFromObject(wrap),
+        spin: Math.random() * Math.PI * 2,
+        isPowerUp: true,
+      });
+      return created;
+    }
+  
+    // Choose pattern based on difficulty for regular coins
     const patterns = ["line", "stair", "arc"];
     let pattern = "line";
-    if (d > 0.65) pattern = patterns[Math.floor(Math.random()*patterns.length)];
+    if (d > 0.65) pattern = patterns[Math.floor(Math.random() * patterns.length)];
     else if (d > 0.35) pattern = Math.random() < 0.5 ? "stair" : "line";
-
-    const count = 4 + Math.floor(Math.random()*3); // 4-6 coins
-    const baseY = 1.2 + Math.random()*1.4;
-    for (let i=0;i<count;i++){
+  
+    const count = 4 + Math.floor(Math.random() * 3); // 4-6 coins
+    const baseY = 1.2 + Math.random() * 1.4;
+    for (let i = 0; i < count; i++) {
       const coin = (this.coinProto ? this.coinProto.clone(true) : this._makeCoinFallback());
       const wrap = new THREE.Group();
       wrap.add(coin);
-
+  
       // Center vertically roughly relative to coin local origin
       const box = new THREE.Box3().setFromObject(wrap);
       const size = new THREE.Vector3();
       const center = new THREE.Vector3();
-      box.getSize(size); box.getCenter(center);
-
+      box.getSize(size);
+      box.getCenter(center);
+  
       let y = baseY;
       if (pattern === "stair") {
         y = baseY + i * 0.35; // staircase up
       } else if (pattern === "arc") {
-        const t = (i / Math.max(1, count-1));
+        const t = (i / Math.max(1, count - 1));
         const mid = 0.5 - Math.abs(t - 0.5);
         y = baseY + mid * 1.1; // arc peak middle
       }
-      coin.position.y += y + (size.y/2) - center.y;
-
-      wrap.position.set(baseX + i*1.5, 0, z);
+      coin.position.y += y + (size.y / 2) - center.y;
+  
+      wrap.position.set(baseX + i * 1.5, 0, z);
       this.group.add(wrap);
-      created.push({ object: wrap, collider: new THREE.Box3().setFromObject(wrap), spin: Math.random()*Math.PI*2 });
+      created.push({
+        object: wrap,
+        collider: new THREE.Box3().setFromObject(wrap),
+        spin: Math.random() * Math.PI * 2
+      });
     }
     return created;
   }
@@ -421,26 +450,37 @@ export class ObstacleManager {
   }
 
   collidesWith(playerBox) {
+    // In an orthographic side view, small Z offsets still look like overlap.
+    // Widen player's collider in Z by lane spread so near-lane obstacles count as hits.
+    const pb = playerBox.clone();
+    const zTol = (this.zSpread ?? 0) + 0.2; // small extra margin
+    pb.min.z -= zTol;
+    pb.max.z += zTol;
     for (const o of this.active) {
-      if (o.collider.intersectsBox(playerBox)) return true;
+      if (o.collider.intersectsBox(pb)) return true;
     }
     return false;
   }
 
   collectCoins(playerBox) {
-    let count = 0;
+    let regularCoins = 0;
+    let powerUpCoins = 0;
     const positions = [];
-    for (let i = this.coins.length-1; i>=0; i--) {
+    for (let i = this.coins.length - 1; i >= 0; i--) {
       const c = this.coins[i];
       if (c.collider.intersectsBox(playerBox)) {
         const p = new THREE.Vector3();
         c.object.getWorldPosition(p);
         positions.push(p.clone());
         this.group.remove(c.object);
-        this.coins.splice(i,1);
-        count++;
+        this.coins.splice(i, 1);
+        if (c.isPowerUp) {
+          powerUpCoins++;
+        } else {
+          regularCoins++;
+        }
       }
     }
-    return { count, positions };
+    return { regularCoins, powerUpCoins, positions };
   }
 }
