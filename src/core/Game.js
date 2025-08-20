@@ -53,7 +53,10 @@ export class Game {
       throw new Error('WebGL not supported: failed to acquire WebGL context');
     }
     this.renderer = new THREE.WebGLRenderer({ canvas, context: gl });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Slightly lower DPR cap on small/mobile screens to improve performance
+    const isSmallScreen = Math.min(window.innerWidth || w, window.innerHeight || h) <= 768;
+    const dprCap = isSmallScreen ? 1.5 : 2;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
     this.renderer.setSize(w, h);
     // Disable all shadow mapping to avoid any darkening
     this.renderer.shadowMap.enabled = false;
@@ -205,6 +208,10 @@ export class Game {
     const halfW = halfH * aspect;
     this.camera = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.1, 200);
     // Chrome dino-style side view: camera positioned to show side profile
+    // Place camera center so the player (x≈-5) sits comfortably inside view even on tall phones
+    // When player not yet created, assume player at -5 and put it ~60% from the left
+    const assumedPlayerX = -5;
+    this.laneX = assumedPlayerX + 0.6 * halfW;
     this.camera.position.set(this.laneX, 2.0, 8);
     this.camera.lookAt(new THREE.Vector3(this.laneX, 1.0, 0));
   }
@@ -351,9 +358,14 @@ export class Game {
       this.camera.top = halfH;
       this.camera.bottom = -halfH;
       this.camera.updateProjectionMatrix();
+      // Keep the player visible on tall mobile by centering with a left bias
+      const px = this.player?.object?.position?.x ?? -5;
+      this.laneX = px + 0.6 * halfW; // ~40% of screen to the left of player
     }
     // Update DPR on resize to handle zoom/orientation changes
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const isSmallScreen = Math.min(window.innerWidth || w, window.innerHeight || h) <= 768;
+    const dprCap = isSmallScreen ? 1.5 : 2;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
     this.renderer.setSize(w, h);
     this.postFX?.onResize(w, h);
   }
