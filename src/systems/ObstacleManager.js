@@ -35,7 +35,7 @@ export class ObstacleManager {
     // Bird cadence timers
     this._birdGuaranteeT = 0; // hard guarantee backup
     this._birdTimer = 0;      // periodic natural spawns
-    this._birdNext = 8 + Math.random()*2; // 8-10s between natural spawns
+    this._birdNext = 6 + Math.random()*2; // 6-8s between natural spawns (harder)
   }
 
   _scheduleNextGap(wasDouble = false) {
@@ -43,16 +43,16 @@ export class ObstacleManager {
     // Keeps on-screen reaction time consistent across speeds (Chrome Dino style).
     const d = this.difficulty;
     // Reaction-time window scales with difficulty
-    const reactMin = THREE.MathUtils.lerp(1.20, 1.00, d);
-    const reactMax = THREE.MathUtils.lerp(1.45, 1.20, d);
+    const reactMin = THREE.MathUtils.lerp(1.15, 0.95, d);
+    const reactMax = THREE.MathUtils.lerp(1.45, 1.15, d);
     const reactT = THREE.MathUtils.lerp(reactMin, reactMax, Math.random());
     // A small absolute gap baseline in world units
-    const baseGap = THREE.MathUtils.lerp(8.5, 6.8, d);
+    const baseGap = THREE.MathUtils.lerp(7.8, 6.2, d);
     let gap = baseGap + Math.max(0, this.speed) * reactT;
     if (wasDouble) gap += 2.5; // extra forgiveness after doubles
     // Clamp
     const minGap = 10.0;
-    const maxGap = 26.0;
+    const maxGap = 24.0;
     this._nextGapWorld = THREE.MathUtils.clamp(gap, minGap, maxGap);
   }
 
@@ -344,31 +344,31 @@ export class ObstacleManager {
     if (this._postDoubleCooldown > 0) this._postDoubleCooldown -= dt;
     // Longer base intervals; never too short
     // Faster cadence overall as difficulty increases, but keep generous spacing
-    const baseInterval = THREE.MathUtils.lerp(1.45, 0.85, this.difficulty);
-    const speedT = THREE.MathUtils.smoothstep(this.speed, 6, 12); // match new Game speed range
-    const interval = Math.max(0.85, baseInterval - (1 - speedT) * 0.06) + Math.max(0, this._postDoubleCooldown);
+    const baseInterval = THREE.MathUtils.lerp(1.30, 0.75, this.difficulty);
+    const speedT = THREE.MathUtils.smoothstep(this.speed, 6, 13); // match Game speed range (6..13)
+    const interval = Math.max(0.75, baseInterval - (1 - speedT) * 0.10) + Math.max(0, this._postDoubleCooldown);
     // Enforce both time interval AND world-distance spacing before spawning
     if (this.spawnTimer >= interval && this.distSinceLast >= this._nextGapWorld) {
       this.spawnTimer = 0;
       // Choose spawn with obstacle bias increasing with difficulty
-      const obstacleBias = THREE.MathUtils.lerp(0.5, 0.78, this.difficulty);
+      const obstacleBias = THREE.MathUtils.lerp(0.56, 0.86, this.difficulty);
       if (Math.random() < obstacleBias) {
         // Decide between cactus and bird even at very low difficulties so birds appear early
         const useBird = (Math.random() < THREE.MathUtils.lerp(0.22, 0.62, this.difficulty));
         const first = useBird ? this._spawnBird() : this._spawnCactus();
         this.active.push(first);
         // Guard: avoid immediate stacking too close
-        const dblChance = THREE.MathUtils.lerp(0.04, 0.14, this.difficulty);
+        const dblChance = THREE.MathUtils.lerp(0.08, 0.22, this.difficulty);
         let didDouble = false;
         if (Math.random() < dblChance) {
           const second = useBird && Math.random() < 0.5 ? this._spawnBird() : this._spawnCactus();
-          // ensure second is at least 4.6 units ahead of first
-          if (second.object.position.x - first.object.position.x < 4.6) {
-            second.object.position.x = first.object.position.x + 4.6 + Math.random()*1.6;
+          // ensure second is at least 4.4 units ahead of first (fair window)
+          if (second.object.position.x - first.object.position.x < 4.4) {
+            second.object.position.x = first.object.position.x + 4.4 + Math.random()*1.6;
           }
           this.active.push(second);
           // Cooldown after a double
-          this._postDoubleCooldown = THREE.MathUtils.lerp(0.60, 1.10, this.difficulty);
+          this._postDoubleCooldown = THREE.MathUtils.lerp(0.65, 1.15, this.difficulty);
           didDouble = true;
         }
         // Reset distance accumulator and schedule next gap
@@ -387,16 +387,16 @@ export class ObstacleManager {
       const b = this._spawnBird();
       this.active.push(b);
       this._birdTimer = 0;
-      this._birdNext = 6 + Math.random()*3; // 6-9s between birds
+      this._birdNext = 4 + Math.random()*3; // 4-7s between birds (harder)
       this._birdGuaranteeT = 0; // satisfied
     }
 
     // Hard guarantee fallback: ensure a bird eventually appears
-    if (this._birdGuaranteeT > 6.0) {
+    if (this._birdGuaranteeT > 4.5) {
       this.spawnBirdPublic();
       this._birdGuaranteeT = 0;
       this._birdTimer = 0;
-      this._birdNext = 6 + Math.random()*3;
+      this._birdNext = 4 + Math.random()*3;
     }
 
     // Move all entities towards player (negative X)

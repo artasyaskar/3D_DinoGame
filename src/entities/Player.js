@@ -42,6 +42,8 @@ export class Player {
 
     this.ducking = false;
     this._baseModelScale = new THREE.Vector3(1, 1, 1);
+    // Movement speed proxy from Game (used to scale run animation speed)
+    this._moveSpeed = 6;
   }
 
   setJumpHeld(held) {
@@ -152,9 +154,29 @@ export class Player {
       // Choose sensible defaults
       const runAction = this._findAction(['run', 'walk', 'idle']) || this._firstAction();
       this._play(runAction, 0.25);
+      // Apply current move-speed to mixer timeScale so dino visibly speeds up with game
+      this._applyMixerSpeed();
     }
 
     this._recalcCollider();
+  }
+
+  // External hook from Game: provide current world/game speed and update animation pace
+  setMoveSpeed(v) {
+    if (!isFinite(v)) return;
+    this._moveSpeed = v;
+    this._applyMixerSpeed();
+  }
+
+  _applyMixerSpeed() {
+    if (!this.mixer) return;
+    // Map 6..12 game speed to ~1.0..1.7 animation speed; clamp to safe range
+    const animSpeed = THREE.MathUtils.clamp(
+      THREE.MathUtils.mapLinear(this._moveSpeed ?? 6, 6, 12, 1.0, 1.7),
+      0.6,
+      2.0
+    );
+    this.mixer.timeScale = animSpeed;
   }
 
   _firstAction() {

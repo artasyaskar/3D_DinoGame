@@ -364,7 +364,7 @@ export class Game {
 
   resetState() {
     this.score = 0;
-    this.speed = 8;
+    this.speed = 6;
     this.difficultyTimer = 0;
     this.timePlayed = 0;
     this._difficulty = 0;
@@ -499,14 +499,13 @@ export class Game {
     }
 
     // Continuous difficulty 0..1 and speed curve (ease-out)
-    // Increase primarily with time, lightly with score
+    // Increase primarily with time; stronger ramp for a more noticeable acceleration
     const t = this.timePlayed;
-    // Even slower difficulty ramp so speed increases gradually
-    const dTime = 1.0 - Math.exp(-t * 0.020);
-    const dScore = Math.min(1, (this.score / 4000) * 0.12);
-    this._difficulty = Math.min(1, dTime * 0.8 + dScore * 0.3);
-    // Slightly lower baseline and ceiling for a calmer pace
-    const base = 5.8, max = 11.5;
+    const dTime = 1.0 - Math.exp(-t * 0.050); // faster ramp to feel speed-up sooner
+    const dScore = Math.min(1, (this.score / 4000) * 0.05); // very low influence
+    this._difficulty = Math.min(1, dTime * 0.97 + dScore * 0.05);
+    // New speed envelope aligned with ObstacleManager assumptions (6..13)
+    const base = 6.0, max = 13.0;
     const easeOut = (x)=> 1 - Math.pow(1 - x, 2);
     let currentSpeed = THREE.MathUtils.lerp(base, max, easeOut(this._difficulty));
     if (this.isStumbling) {
@@ -516,6 +515,7 @@ export class Game {
     this.obstacles.setSpeed(this.speed);
     this.obstacles.setDifficulty(this._difficulty);
     this.player.setDifficulty?.(this._difficulty);
+    this.player.setMoveSpeed?.(this.speed);
     this.sounds.setDifficulty?.(this._difficulty);
 
     // Update systems
