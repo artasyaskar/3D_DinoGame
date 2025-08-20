@@ -3,10 +3,11 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 
 // Simple endless-runner obstacle and coin system
 export class ObstacleManager {
-  constructor(scene, assetLoader, sounds) {
+  constructor(scene, assetLoader, sounds, particles) {
     this.scene = scene;
     this.loader = assetLoader;
     this.sounds = sounds;
+    this.particles = particles;
 
     this.speed = 8;
 
@@ -19,7 +20,7 @@ export class ObstacleManager {
     this.coins = [];
 
     this.spawnTimer = 0;
-    this.spawnInterval = 1.25; // seconds baseline, reduced with speed
+    this.spawnInterval = 1.45; // slightly longer baseline; reduced with speed
     this.difficulty = 0; // 0..1 scalar from Game
     this._postDoubleCooldown = 0; // extra cooldown after a double obstacle to avoid walls
 
@@ -28,10 +29,31 @@ export class ObstacleManager {
 
     // Lane center z=0; keep slight random z offset within [-1.2,1.2]
     this.zSpread = 1.2;
+    // Spacing control (world-distance based like Chrome Dino)
+    this.distSinceLast = 999; // world units traveled since last obstacle group
+    this._nextGapWorld = 0;   // required world-distance until next spawn allowed
     // Bird cadence timers
     this._birdGuaranteeT = 0; // hard guarantee backup
     this._birdTimer = 0;      // periodic natural spawns
     this._birdNext = 8 + Math.random()*2; // 8-10s between natural spawns
+  }
+
+  _scheduleNextGap(wasDouble = false) {
+    // Compute next required world-distance (in units) before another spawn is allowed.
+    // Keeps on-screen reaction time consistent across speeds (Chrome Dino style).
+    const d = this.difficulty;
+    // Reaction-time window scales with difficulty
+    const reactMin = THREE.MathUtils.lerp(1.20, 1.00, d);
+    const reactMax = THREE.MathUtils.lerp(1.45, 1.20, d);
+    const reactT = THREE.MathUtils.lerp(reactMin, reactMax, Math.random());
+    // A small absolute gap baseline in world units
+    const baseGap = THREE.MathUtils.lerp(8.5, 6.8, d);
+    let gap = baseGap + Math.max(0, this.speed) * reactT;
+    if (wasDouble) gap += 2.5; // extra forgiveness after doubles
+    // Clamp
+    const minGap = 10.0;
+    const maxGap = 26.0;
+    this._nextGapWorld = THREE.MathUtils.clamp(gap, minGap, maxGap);
   }
 
   _makeCactusFallback() {
@@ -125,6 +147,9 @@ export class ObstacleManager {
     this.coins.length = 0;
     // Spawn quickly after a reset so the game feels alive immediately
     this.spawnTimer = this.spawnInterval;
+    // Reset spacing trackers
+    this.distSinceLast = 999;
+    this._nextGapWorld = 0;
     // Reset bird timers
     this._birdGuaranteeT = 0;
     this._birdTimer = 0;
@@ -147,8 +172,8 @@ export class ObstacleManager {
     box.getSize(size); box.getCenter(center);
     obj.position.y += (size.y/2) - center.y;
 
-    // Spawn slightly farther so approach timing feels fairer like Chrome Dino
-    wrapper.position.set(14 + Math.random()*8, 0, (Math.random()*2-1)*this.zSpread);
+    // Spawn a bit farther so approach timing feels fairer like Chrome Dino
+    wrapper.position.set(15 + Math.random()*9, 0, (Math.random()*2-1)*this.zSpread);
 
     this.group.add(wrapper);
     return { object: wrapper, collider: new THREE.Box3().setFromObject(wrapper) };
@@ -162,14 +187,25 @@ export class ObstacleManager {
 
     // Ground relative adjustment not required; we'll place at flying height
     // Set spawn x farther and choose a flying height that can conflict with jump timing
-    // Heights tuned so a well-timed jump can clear them
-    const yHeights = [0.6, 1.0, 1.4];
+    // Heights tuned so a well-timed jump can clear them, or a duck can avoid them.
+    // Player is ~0.45 units high. Jump apex is ~1.5 units.
+    const yHeights = [
+      0.20, // Lower low-flying so ducking feels fair
+      0.38, // Slightly lowered mid-range
+      0.72, // Slightly lowered high-flying
+    ];
     const y = yHeights[Math.floor(Math.random() * yHeights.length)];
     wrapper.position.set(15 + Math.random() * 8, y, (Math.random() * 2 - 1) * this.zSpread);
 
     // Setup animation mixer if GLTF had animations; otherwise fallback to tilt
     wrapper.userData = wrapper.userData || {};
-    const u = { t: Math.random() * Math.PI * 2, mixer: null };
+    const u = {
+      t: Math.random() * Math.PI * 2,
+      mixer: null,
+      baseY: y,
+      bobAmp: 0.14 + Math.random() * 0.08, // 0.14..0.22 amplitude
+      bobFreq: 0.9 + Math.random() * 0.6,  // 0.9..1.5 frequency
+    };
     if (this.birdGltf?.animations?.length) {
       try {
         // Create a mixer on the cloned object
@@ -272,15 +308,18 @@ export class ObstacleManager {
   update(dt) {
     // Spawn cadence scales with difficulty and speed
     this.spawnTimer += dt;
+    // Track distance traveled since last obstacle group, in world units
+    this.distSinceLast += Math.max(0, this.speed) * dt;
     this._birdGuaranteeT += dt;
     this._birdTimer += dt;
     if (this._postDoubleCooldown > 0) this._postDoubleCooldown -= dt;
-    // Slightly longer base intervals; never too short
-    // Faster cadence overall as difficulty increases
-    const baseInterval = THREE.MathUtils.lerp(1.10, 0.60, this.difficulty);
-    const speedT = THREE.MathUtils.smoothstep(this.speed, 7, 15); // adjusted to new speed range
-    const interval = Math.max(0.65, baseInterval - (1 - speedT) * 0.08) + Math.max(0, this._postDoubleCooldown);
-    if (this.spawnTimer >= interval) {
+    // Longer base intervals; never too short
+    // Faster cadence overall as difficulty increases, but keep generous spacing
+    const baseInterval = THREE.MathUtils.lerp(1.45, 0.85, this.difficulty);
+    const speedT = THREE.MathUtils.smoothstep(this.speed, 6, 12); // match new Game speed range
+    const interval = Math.max(0.85, baseInterval - (1 - speedT) * 0.06) + Math.max(0, this._postDoubleCooldown);
+    // Enforce both time interval AND world-distance spacing before spawning
+    if (this.spawnTimer >= interval && this.distSinceLast >= this._nextGapWorld) {
       this.spawnTimer = 0;
       // Choose spawn with obstacle bias increasing with difficulty
       const obstacleBias = THREE.MathUtils.lerp(0.5, 0.78, this.difficulty);
@@ -290,19 +329,27 @@ export class ObstacleManager {
         const first = useBird ? this._spawnBird() : this._spawnCactus();
         this.active.push(first);
         // Guard: avoid immediate stacking too close
-        const dblChance = THREE.MathUtils.lerp(0.1, 0.3, this.difficulty);
+        const dblChance = THREE.MathUtils.lerp(0.04, 0.14, this.difficulty);
+        let didDouble = false;
         if (Math.random() < dblChance) {
           const second = useBird && Math.random() < 0.5 ? this._spawnBird() : this._spawnCactus();
-          // ensure second is at least 2.5 units ahead of first
-          if (second.object.position.x - first.object.position.x < 2.5) {
-            second.object.position.x = first.object.position.x + 2.5 + Math.random()*1.0;
+          // ensure second is at least 4.6 units ahead of first
+          if (second.object.position.x - first.object.position.x < 4.6) {
+            second.object.position.x = first.object.position.x + 4.6 + Math.random()*1.6;
           }
           this.active.push(second);
           // Cooldown after a double
-          this._postDoubleCooldown = THREE.MathUtils.lerp(0.28, 0.55, this.difficulty);
+          this._postDoubleCooldown = THREE.MathUtils.lerp(0.60, 1.10, this.difficulty);
+          didDouble = true;
         }
+        // Reset distance accumulator and schedule next gap
+        this.distSinceLast = 0;
+        this._scheduleNextGap(didDouble);
       } else {
         this.coins.push(...this._spawnCoinLine());
+        // Coins shouldn't suppress obstacles for too long; keep spacing logic consistent
+        this.distSinceLast = 0;
+        this._scheduleNextGap(false);
       }
     }
 
@@ -330,13 +377,28 @@ export class ObstacleManager {
       o.object.position.x += dx;
       // simple bird flap/tilt or mixer update
       if (o.type === 'bird' && o.object.userData?.bird) {
-        if (o.object.userData.bird.mixer) {
-          o.object.userData.bird.mixer.update(dt);
+        const birdData = o.object.userData.bird;
+        birdData.t += dt * 4; // time accumulator for bobbing
+
+        // Update animation or fallback to tilt
+        if (birdData.mixer) {
+          try { birdData.mixer.update(dt); } catch(_){}
         } else {
-          // Fallback to simple rotation if no animation
-          o.object.userData.bird.t += dt * 6;
-          const s = Math.sin(o.object.userData.bird.t);
-          o.object.rotation.z = s * 0.08;
+          const s = Math.sin(birdData.t * 1.7); // slightly faster flap
+          o.object.rotation.z = s * 0.1;
+        }
+
+        // Vertical bobbing for flight feel
+        if (typeof birdData.baseY === 'number') {
+          const amp = birdData.bobAmp ?? 0.18;
+          const freq = birdData.bobFreq ?? 1.2;
+          o.object.position.y = birdData.baseY + Math.sin(birdData.t * freq) * amp;
+        }
+
+        // Spawn trail particles
+        if (this.particles && Math.random() < 0.5) {
+          const pos = o.object.position;
+          this.particles.spawnBirdTrail(pos.x, pos.y, pos.z, 1);
         }
       }
       o.collider.setFromObject(o.object);

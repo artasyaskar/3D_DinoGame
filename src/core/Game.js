@@ -245,7 +245,7 @@ export class Game {
       });
 
       // Player
-      this.player = new Player(this.scene, this.loader, this.sounds);
+      this.player = new Player(this.scene, this.loader, this.sounds, this.particles);
       await this.player.load('/models/dino.glb');
 
       // For orthographic side camera we keep a fixed framing (no auto-zoom)
@@ -258,8 +258,10 @@ export class Game {
         this.onResize();
       }
 
+      // Particles
+      this.particles = new ParticleSystem(this.scene);
       // Obstacle manager
-      this.obstacles = new ObstacleManager(this.scene, this.loader, this.sounds);
+      this.obstacles = new ObstacleManager(this.scene, this.loader, this.sounds, this.particles);
       await this.obstacles.prepare({
         cactusUrl: '/models/cactus.glb',
         coinUrl: '/models/coin.glb',
@@ -331,7 +333,8 @@ export class Game {
     this.obstacles?.dispose();
   }
 
-  jump() { this.player?.jump(); }
+  jump(mult = 1) { this.player?.jump(mult); }
+  setJumpHeld(held) { this.player?.setJumpHeld?.(held); }
 
   onResize() {
     const { clientWidth: w, clientHeight: h } = this.container;
@@ -383,12 +386,12 @@ export class Game {
     // Continuous difficulty 0..1 and speed curve (ease-out)
     // Increase primarily with time, lightly with score
     const t = this.timePlayed;
-    // Slower difficulty ramp to feel closer to Chrome Dino
-    const dTime = 1.0 - Math.exp(-t * 0.055);
-    const dScore = Math.min(1, (this.score / 3000) * 0.25); // smaller contribution
-    this._difficulty = Math.min(1, dTime * 0.9 + dScore * 0.6);
-    // Slightly slower baseline and ceiling
-    const base = 7.2, max = 15.2;
+    // Even slower difficulty ramp so speed increases gradually
+    const dTime = 1.0 - Math.exp(-t * 0.020);
+    const dScore = Math.min(1, (this.score / 4000) * 0.12);
+    this._difficulty = Math.min(1, dTime * 0.8 + dScore * 0.3);
+    // Slightly lower baseline and ceiling for a calmer pace
+    const base = 5.8, max = 11.5;
     const easeOut = (x)=> 1 - Math.pow(1 - x, 2);
     this.speed = THREE.MathUtils.lerp(base, max, easeOut(this._difficulty));
     this.obstacles.setSpeed(this.speed);
@@ -422,22 +425,22 @@ export class Game {
     }
 
     const coinRes = this.obstacles.collectCoins(this.player.getCollider());
-    let collected = 0;
-    if (typeof coinRes === 'number') {
-      collected = coinRes;
-    } else if (coinRes && typeof coinRes === 'object') {
-      collected = coinRes.count || 0;
-      // Coin sparkles disabled per request
-    }
-    if (collected > 0) {
+    if (coinRes && coinRes.count > 0) {
       this.sounds.playCoin();
-      this.score += 50 * collected;
-      this.onCoin?.(50 * collected);
+      this.score += 50 * coinRes.count;
+      this.onCoin?.(50 * coinRes.count);
       this.triggerShake(0.06, 0.12);
+
+      // Spawn sparkles at each collected coin's position
+      if (this.particles && coinRes.positions?.length > 0) {
+        for (const pos of coinRes.positions) {
+          this.particles.spawnSparkleAt(pos.x, pos.y, pos.z, 8);
+        }
+      }
     }
 
-    // Score over time
-    this.score += dt * 10 * (this.speed * 0.5);
+    // Score over time (slower, mostly time-based with mild speed influence)
+    this.score += dt * (6.0 + this.speed * 0.6);
     this.onScore?.(this.score);
 
     // Fixed side-on camera (Chrome Dino style)

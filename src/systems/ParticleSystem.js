@@ -94,6 +94,35 @@ export class ParticleSystem {
     }
   }
 
+  spawnBirdTrail(x, y, z, count = 1) {
+    for (let i = 0; i < count; i++) {
+      const size = 0.05 + Math.random() * 0.05;
+      const geo = new THREE.PlaneGeometry(1, 1);
+      const mat = new THREE.MeshBasicMaterial({
+        map: this._dustTex,
+        transparent: true,
+        color: new THREE.Color(0xff6666), // a reddish color
+        opacity: 0.0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, y, z);
+      this.group.add(mesh);
+
+      const vel = new THREE.Vector3(0, 0, 0);
+
+      this.particles.push({
+        mesh,
+        vel,
+        life: 0,
+        maxLife: 0.2 + Math.random() * 0.1,
+        startSize: size,
+        endSize: size * 0.1,
+      });
+    }
+  }
+
   update(dt) {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];

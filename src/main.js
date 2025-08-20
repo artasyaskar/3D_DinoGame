@@ -17,6 +17,11 @@ const diffFill = document.getElementById('diff-fill');
 const flashEl = document.getElementById('flash');
 
 let game;
+// Double-tap detection state
+let _lastKeyTap = 0;
+let _lastPointerTap = 0;
+const BOOST_WINDOW = 280; // ms (slightly longer for reliability)
+const BOOST_MULT = 1.35;  // boosted jump height
 
 function hide(el){ el.classList.add('hidden'); }
 function show(el){ el.classList.remove('hidden'); }
@@ -90,7 +95,12 @@ async function init() {
   window.addEventListener('resize', () => game.onResize());
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-      game?.jump();
+      if (e.repeat) return; // ignore auto-repeat
+      const now = performance.now();
+      const boosted = (now - _lastKeyTap) <= BOOST_WINDOW;
+      _lastKeyTap = now;
+      game?.jump(boosted ? BOOST_MULT : 1);
+      game?.setJumpHeld(true);
     } else if (e.code === 'KeyP') {
       if (game?.isPaused) game.resume(); else game.pause();
     } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
@@ -100,17 +110,25 @@ async function init() {
   window.addEventListener('keyup', (e) => {
     if (e.code === 'ArrowDown' || e.code === 'KeyS') {
       game?.player.setDuck(false);
+    } else if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+      game?.setJumpHeld(false);
     }
   });
 
   // Simple mobile/desktop pointer: tap/click anywhere in container to jump
   const container = document.getElementById('game-container');
-  const onTap = () => {
+  const onPointerDown = () => {
     if (!game || !game.isRunning || game.isPaused) return;
-    game.jump();
+    const now = performance.now();
+    const boosted = (now - _lastPointerTap) <= BOOST_WINDOW;
+    _lastPointerTap = now;
+    game.jump(boosted ? BOOST_MULT : 1);
+    game.setJumpHeld(true);
   };
-  container.addEventListener('pointerdown', onTap, { passive: true });
-  container.addEventListener('touchend', onTap, { passive: true });
+  const onPointerUp = () => { game?.setJumpHeld(false); };
+  container.addEventListener('pointerdown', onPointerDown, { passive: true });
+  container.addEventListener('pointerup', onPointerUp, { passive: true });
+  container.addEventListener('pointercancel', onPointerUp, { passive: true });
 
   // Handle orientation changes explicitly
   window.addEventListener('orientationchange', () => setTimeout(() => game.onResize(), 50));

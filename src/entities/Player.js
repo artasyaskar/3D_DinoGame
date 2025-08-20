@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 
 export class Player {
-  constructor(scene, assetLoader, sounds) {
+  constructor(scene, assetLoader, sounds, particles) {
     this.scene = scene;
     this.loader = assetLoader;
     this.sounds = sounds;
+    this.particles = particles;
 
     this.object = new THREE.Group();
     this.object.position.set(-5, 0, 0); // place on left side like Chrome Dino
@@ -17,7 +18,8 @@ export class Player {
     // Movement
     this.velY = 0;
     this.gravity = -26;
-    this.jumpStrength = 13.6;
+    // Slightly higher default jump to better match Chrome Dino feel
+    this.jumpStrength = 15.6;
     this._diff = 0; // 0..1 difficulty input from Game
     this._jumpMul = 1; // scales jumpStrength slightly with difficulty
     this._gravMul = 1; // reduces gravity magnitude slightly with difficulty
@@ -29,6 +31,7 @@ export class Player {
     this.jumpBufferTimer = 0;
     this.jumpBuffered = false;
     this._wasGrounded = true;
+    this.jumpHeld = false; // input: whether jump key is currently held
 
     // Collider
     this.collider = new THREE.Box3();
@@ -39,6 +42,10 @@ export class Player {
 
     this.ducking = false;
     this._baseModelScale = new THREE.Vector3(1, 1, 1);
+  }
+
+  setJumpHeld(held) {
+    this.jumpHeld = !!held;
   }
 
   async load(url) {
@@ -158,10 +165,31 @@ export class Player {
     this.isOnGround = true;
   }
 
-  jump() {
-    // Buffer the jump request; it will be executed in update() when eligible
-    this.jumpBuffered = true;
-    this.jumpBufferTimer = this.jumpBufferMax;
+  // Allow external multiplier for boosted jump (e.g., double-tap)
+  jump(mult = 1) {
+    const m = Math.max(1, mult || 1);
+    // If we can jump now, do it immediately for snappy input
+    if (this.isOnGround || this.coyoteTimer > 0) {
+      this.jumpBuffered = false;
+      this._pendingJumpMul = 1;
+      this.velY = this.jumpStrength * this._jumpMul * m;
+      this.isOnGround = false;
+      this.coyoteTimer = 0;
+      this.sounds.playJump();
+      const jumpAct = this._findAction(['jump']);
+      if (jumpAct) this._play(jumpAct, 0.08);
+    } else {
+      // Otherwise, buffer the jump to execute at next opportunity
+      this.jumpBuffered = true;
+      this.jumpBufferTimer = this.jumpBufferMax;
+      this._pendingJumpMul = m;
+    }
+
+    // Spawn jump dust particles for feedback, but only if near ground
+    if (this.particles && this.object.position.y < 0.5) {
+      const pos = this.object.position;
+      this.particles.spawnDustAt(pos.x, pos.z, 5);
+    }
   }
 
   setDifficulty(d) {
@@ -180,8 +208,18 @@ export class Player {
     if (this.jumpBuffered) this.jumpBufferTimer -= dt; if (this.jumpBufferTimer <= 0) { this.jumpBuffered = false; }
     if (!this.isOnGround) this.coyoteTimer = Math.max(0, this.coyoteTimer - dt);
 
-    // Vertical physics
-    this.velY += (this.gravity * this._gravMul) * dt;
+    // Vertical physics with variable jump height (Chrome Dino-like)
+    // Adjust gravity depending on ascent/descend and whether jump is held
+    let g = this.gravity * this._gravMul;
+    if (this.velY > 0) {
+      // Ascending: if not holding jump, increase gravity to cut jump short
+      // When holding, reduce gravity more to allow a higher apex
+      g *= (this.jumpHeld ? 0.88 : 1.85);
+    } else if (this.velY < 0) {
+      // Falling: slightly stronger gravity for snappier landings
+      g *= 1.25;
+    }
+    this.velY += g * dt;
     this.object.position.y += this.velY * dt;
     if (this.object.position.y <= 0) {
       this.object.position.y = 0;
@@ -204,7 +242,9 @@ export class Player {
     // Execute buffered jump if eligible
     if (this.jumpBuffered && (this.isOnGround || this.coyoteTimer > 0)) {
       this.jumpBuffered = false;
-      this.velY = this.jumpStrength * this._jumpMul;
+      const mul = (this._pendingJumpMul || 1);
+      this._pendingJumpMul = 1;
+      this.velY = this.jumpStrength * this._jumpMul * mul;
       this.isOnGround = false;
       this.sounds.playJump();
       const jumpAct = this._findAction(['jump']);
