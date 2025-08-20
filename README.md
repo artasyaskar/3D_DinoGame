@@ -4,23 +4,66 @@
 Overview
 ================================================================================
 
-Welcome to **3D_DinoGame**, a modern, browser-based 3D endless runner inspired by the classic Chrome Dino game — but taken to a whole new level with stunning 3D visuals, smooth animations, and immersive environments.
+Welcome to **3D Dino Game**, a modern, browser-based 3D endless runner inspired by the classic Chrome Dino — now in 3D with smooth animations, responsive controls, and polished visuals.
 
-Built with the powerful WebGL engine **Babylon.js**, this project aims to deliver a polished, engaging game experience that feels like a Gameloft studio title — all while running directly in your browser and deployable easily on platforms like Vercel.
+Built with **Three.js** and **Vite**, plus **Howler.js** for audio and **GSAP** for micro‑tweens, it runs directly in your browser and is easy to host on any static server (Vercel, Netlify, GitHub Pages, etc.).
 
-Whether you are a game developer, a learner, or simply curious, this repository contains a full 3D game framework demonstrating modular design, asset management, and advanced game systems in JavaScript.
+Whether you are a game dev, learner, or just curious, this repo shows a clean ES modules setup with modular entities/systems and async asset loading.
 
 ---
 
-================================================================================
-Why This Project Exists
-================================================================================
+## Features
 
-- To provide a solid foundation for building high-quality 3D web games.
-- To demonstrate best practices for organizing code and assets in complex game projects.
-- To learn and showcase game programming techniques including animation, physics, UI, and audio.
-- To create a base for future expansion with more environments, enemies, and gameplay features.
-- To experiment with deploying 3D games seamlessly on free platforms like Vercel.
+- Smooth orthographic side camera with live zoom and fit
+- Jump and duck mechanics (no duck in mid‑air)
+- Obstacles and coins with collisions and SFX
+- Score + persistent High Score (localStorage)
+- Keyboard and touch controls (two‑finger tap to pause)
+- Debug helpers (axes, grid, bbox) toggle via H or HUD button
+
+## Controls
+
+- Jump: Space / ArrowUp / W
+- Duck (hold): ArrowDown / S
+- Pause/Resume: P (or two‑finger tap)
+- Helpers: H or HUD “Helpers” button
+- Camera: ] / [ to zoom, F fit to player, R reset
+
+## Quick Start
+
+1) Install deps
+```
+npm install
+```
+2) Run dev server (Vite)
+```
+npm run dev
+```
+3) Open the game
+```
+http://localhost:5173
+```
+
+Build and preview
+```
+npm run build
+npm run preview
+```
+
+## Project Structure (current)
+
+- `public/`
+  - `models/` dino.glb, cactus.glb, coin.glb
+  - `textures/environment/ground.png` (optional)
+  - `sounds/` bg_music.mp3, jump.ogg, hit.ogg, coin.ogg
+- `src/`
+  - `core/Game.js` main engine, camera, loop, scoring
+  - `entities/Player.js` dino model, animations, jump/duck, collider
+  - `systems/ObstacleManager.js` cactus/coin logic, collisions
+  - `managers/AssetLoader.js`, `managers/SoundManager.js`
+  - `main.js` bootstrap + UI wiring
+- `index.html` HUD and overlays
+- `vite.config.js`, `package.json`
 
 ---
 
@@ -128,10 +171,10 @@ git clone https://github.com/artasyaskar/3D_DinoGame.git
 npm install
 
 3. **Start the development server**  
-npm start
+npm run dev
 
 4. **Open the game**  
-Visit `http://localhost:3000` in your web browser to play and test.
+Visit `http://localhost:5173` in your web browser to play and test.
 
 ---
 
@@ -139,17 +182,12 @@ Visit `http://localhost:3000` in your web browser to play and test.
 How It Works - The Big Picture
 ================================================================================
 
-- The game boots up by initializing Babylon.js in `src/core/EngineInit.js`, setting up the WebGL canvas, and handling resizing.
-- Game scenes (biomes like desert, jungle, city) load from `src/environments/` dynamically.
-- The player’s dinosaur, enemies, obstacles, and power-ups are represented as entities in `src/entities/`.
-- Animations for characters and environmental elements live inside `src/animations/`.
-- Core gameplay logic—physics simulation, collision detection, scoring, and difficulty progression—is managed in the `src/systems/` folder.
-- Visual effects, including particles, weather, and post-processing (bloom, motion blur), enhance immersion and live in `src/vfx/`.
-- The user interface for menus, HUD, pause screens, and shops is modularized under `src/ui/`.
-- Asset management (loading models, textures, and sounds) is centralized via `src/assets/AssetLoader.js`.
-- Utility code like math helpers, sound control, and logging is in `src/utils/`.
-- Automated tests ensure stable gameplay logic in `src/tests/`.
-- Configuration files in `src/config/` make tuning gameplay, graphics, and controls easy.
+- The game boots with `src/main.js` which creates `Game` and wires UI.
+- `src/core/Game.js` sets up Three.js scene, orthographic camera, lights, renderer, loop, scoring, and high score.
+- `src/entities/Player.js` loads and normalizes the GLTF dino, plays animations, handles jump/duck and collider.
+- `src/systems/ObstacleManager.js` spawns cacti/coins, updates movement, collisions and pickups.
+- `src/managers/AssetLoader.js` and `src/managers/SoundManager.js` handle assets and audio (Howler).
+- Static assets are served from `public/` via absolute paths like `/models/dino.glb`.
 
 ---
 
@@ -157,12 +195,11 @@ How It Works - The Big Picture
 Technologies Used
 ================================================================================
 
-- **Babylon.js** — WebGL-based 3D engine powering the rendering and game loop  
-- **JavaScript (ES6+)** — The core programming language driving game logic  
-- **HTML5 & CSS3** — For UI and styling  
-- **Node.js & npm** — Dependency management and build tooling  
-- **Vercel** — Cloud platform for effortless deployment and hosting  
-- **Git & GitHub** — Version control and collaboration platform
+- **Three.js** — Rendering and scene management
+- **Vite** — Dev server and build
+- **Howler.js** — Audio (BGM + SFX)
+- **GSAP** — Micro‑tweens where applicable
+- **JavaScript (ES Modules)**, **HTML5/CSS3**
 
 ---
 
