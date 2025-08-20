@@ -37,9 +37,8 @@ export class Player {
     // Shadow receiver/caster toggle later
     this._shadowMesh = null;
 
-    // Ducking removed for responsiveness/simplicity
     this.ducking = false;
-    this.duckT = 0;
+    this._baseModelScale = new THREE.Vector3(1, 1, 1);
   }
 
   async load(url) {
@@ -51,16 +50,22 @@ export class Player {
       if (c.isMesh) {
         c.castShadow = false;
         c.receiveShadow = false;
-        const oldMat = c.material;
-        const basic = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        if (oldMat) {
-          if (oldMat.map) { basic.map = oldMat.map; }
-          if (oldMat.alphaMap) { basic.alphaMap = oldMat.alphaMap; basic.transparent = true; }
-          if (oldMat.transparent) { basic.transparent = true; basic.opacity = oldMat.opacity; }
-          if (oldMat.side !== undefined) basic.side = oldMat.side;
+        if (c.material) {
+          const oldMat = c.material;
+          const newMat = new THREE.MeshBasicMaterial();
+
+          if (oldMat.map) newMat.map = oldMat.map;
+          if (oldMat.color) newMat.color.copy(oldMat.color);
+          if (oldMat.vertexColors) newMat.vertexColors = true;
+          
+          if (oldMat.transparent) newMat.transparent = true;
+          if (oldMat.alphaMap) newMat.alphaMap = oldMat.alphaMap;
+          if (oldMat.opacity < 1.0) newMat.opacity = oldMat.opacity;
+
+          if (c.isSkinnedMesh) newMat.skinning = true;
+
+          c.material = newMat;
         }
-        if (c.isSkinnedMesh) basic.skinning = true;
-        c.material = basic;
       }
     });
 
@@ -171,9 +176,6 @@ export class Player {
     // Animate
     if (this.mixer) this.mixer.update(dt);
 
-    // Duck disabled: keep factor at 0
-    this.duckT = 0;
-
     // Timers for jump feel
     if (this.jumpBuffered) this.jumpBufferTimer -= dt; if (this.jumpBufferTimer <= 0) { this.jumpBuffered = false; }
     if (!this.isOnGround) this.coyoteTimer = Math.max(0, this.coyoteTimer - dt);
@@ -209,7 +211,14 @@ export class Player {
       if (jumpAct) this._play(jumpAct, 0.1);
     }
 
-    // Crouch transform disabled
+    // Crouch transform
+    const model = this.object.children[0];
+    if (model) {
+        const targetScaleY = this.ducking ? 0.6 : 1.0;
+        const currentScaleY = model.scale.y / this._baseModelScale.y;
+        const newScaleY = currentScaleY + (targetScaleY - currentScaleY) * (dt * 20);
+        model.scale.y = this._baseModelScale.y * newScaleY;
+    }
 
     // Shadow reacts to height: higher jump -> smaller and lighter shadow
     if (this._shadowMesh) {
@@ -242,5 +251,23 @@ export class Player {
     return this.collider.clone();
   }
 
-  setDuck(_on) { /* no-op: ducking removed */ }
+  setDuck(isDucking) {
+    if (this.ducking === isDucking) return;
+    this.ducking = isDucking;
+
+    // Animation handling
+    const idleAction = this._findAction(['run', 'walk', 'idle']) || this._firstAction();
+    const duckAction = this._findAction(['duck', 'crouch']);
+
+    if (isDucking) {
+      if (duckAction) {
+        this._play(duckAction, 0.1);
+      }
+    } else {
+      // Transition back to idle/run
+      if (duckAction && this.currentAction === duckAction) {
+        this._play(idleAction, 0.2);
+      }
+    }
+  }
 }

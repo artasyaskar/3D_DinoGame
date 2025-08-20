@@ -34,7 +34,25 @@ export class Game {
     this.laneX = 0; // camera lane center for side view
     this._setupOrthoCamera(w / h);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Explicitly create canvas + WebGL context first to avoid extensions or
+    // other scripts attaching a 2D context which would block WebGL creation.
+    const canvas = document.createElement('canvas');
+    const ctxOpts = {
+      antialias: true,
+      alpha: true,
+      depth: true,
+      stencil: false,
+      preserveDrawingBuffer: false,
+      powerPreference: 'high-performance',
+      desynchronized: true,
+    };
+    let gl = canvas.getContext('webgl2', ctxOpts) ||
+             canvas.getContext('webgl', ctxOpts) ||
+             canvas.getContext('experimental-webgl', ctxOpts);
+    if (!gl) {
+      throw new Error('WebGL not supported: failed to acquire WebGL context');
+    }
+    this.renderer = new THREE.WebGLRenderer({ canvas, context: gl });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h);
     // Disable all shadow mapping to avoid any darkening

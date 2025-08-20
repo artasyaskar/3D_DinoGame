@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export class BackgroundSystem {
-  constructor(scene) {
+  constructor(scene, { enableParallax = true } = {}) {
     this.scene = scene;
     this.texLoader = new THREE.TextureLoader();
 
@@ -9,6 +9,7 @@ export class BackgroundSystem {
     this.floorBand = null;
     this.parallaxFar = null;
     this.parallaxNear = null;
+    this.enableParallax = enableParallax;
 
     this._bandTex = null;
     this._bandGradTex = null;
@@ -40,48 +41,55 @@ export class BackgroundSystem {
     this._bandGradTex = new THREE.CanvasTexture(bandCanvas);
     this._bandGradTex.wrapS = THREE.ClampToEdgeWrapping;
     this._bandGradTex.wrapT = THREE.ClampToEdgeWrapping;
-    const bandMat = new THREE.MeshBasicMaterial({ map: this._bandGradTex, transparent: true, depthWrite: false, depthTest: false });
+    const bandMat = new THREE.MeshBasicMaterial({ map: this._bandGradTex, transparent: true, opacity: 0.25, depthWrite: false, depthTest: false });
     this.floorBand = new THREE.Mesh(bandGeo, bandMat);
     this.floorBand.position.set(0, 0.02, -5); // push farther back; no depth test so it stays behind
     this.floorBand.receiveShadow = false;
-    // Keep created but start hidden to prevent any dark overlay
-    this.floorBand.visible = false;
+    // Show by default for ground separation
+    this.floorBand.visible = true;
     this.scene.add(this.floorBand);
 
-    // Parallax layers
-    const farGeo = new THREE.PlaneGeometry(400, 60, 1, 1);
-    const nearGeo = new THREE.PlaneGeometry(400, 40, 1, 1);
-    // Parallax layers: soft tint, lower opacity, alphaTest to drop dark fringes, and premultiplied alpha to avoid halos
-    const farMat = new THREE.MeshBasicMaterial({
-      color: 0xbdd0db,
-      transparent: true,
-      opacity: 0.7,
-      depthWrite: false,
-      depthTest: true,
-      alphaTest: 0.02,
-      premultipliedAlpha: true
-    });
-    const nearMat = new THREE.MeshBasicMaterial({
-      color: 0xaec4cf,
-      transparent: true,
-      opacity: 0.5,
-      depthWrite: false,
-      depthTest: true,
-      alphaTest: 0.02,
-      premultipliedAlpha: true
-    });
-    this.parallaxFar = new THREE.Mesh(farGeo, farMat);
-    this.parallaxNear = new THREE.Mesh(nearGeo, nearMat);
-    this.parallaxFar.position.set(0, 6, -12);
-    this.parallaxNear.position.set(0, 3.8, -8);
-    this.parallaxFar.renderOrder = -2;
-    this.parallaxNear.renderOrder = -1;
-    this.scene.add(this.parallaxFar, this.parallaxNear);
+    // Parallax layers (optional)
+    if (this.enableParallax) {
+      const farGeo = new THREE.PlaneGeometry(400, 60, 1, 1);
+      const nearGeo = new THREE.PlaneGeometry(400, 40, 1, 1);
+      // Parallax layers: soft blend behind gameplay (won't fade models)
+      const farMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+        depthTest: true,
+        premultipliedAlpha: true,
+        alphaTest: 0.01
+      });
+      const nearMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.25,
+        depthWrite: false,
+        depthTest: true,
+        premultipliedAlpha: true,
+        alphaTest: 0.01
+      });
+      this.parallaxFar = new THREE.Mesh(farGeo, farMat);
+      this.parallaxNear = new THREE.Mesh(nearGeo, nearMat);
+      // Behind gameplay but near enough for parallax to read
+      this.parallaxFar.position.set(0, 6, -12);
+      this.parallaxNear.position.set(0, 3.8, -8);
+      this.parallaxFar.renderOrder = -2;
+      this.parallaxNear.renderOrder = -1;
+      this.parallaxFar.visible = true;
+      this.parallaxNear.visible = true;
+      this.scene.add(this.parallaxFar, this.parallaxNear);
+    }
 
     // Load textures from public
     this._loadSkyFallbacks();
-    this._loadParallax('/textures/environment/parallax_far.png', this.parallaxFar, '_parallax1Tex', 2);
-    this._loadParallax('/textures/environment/parallax_near.png', this.parallaxNear, '_parallax2Tex', 3);
+    if (this.enableParallax) {
+      this._loadParallax('/textures/environment/parallax_far.png', this.parallaxFar, '_parallax1Tex', 2);
+      this._loadParallax('/textures/environment/parallax_near.png', this.parallaxNear, '_parallax2Tex', 3);
+    }
   }
 
   _loadSkyFallbacks() {
@@ -133,12 +141,12 @@ export class BackgroundSystem {
       target.material.needsUpdate = true;
       this[assignTexPropName] = tex;
       console.log('[BackgroundSystem] Loaded', url);
+      // Ensure visible once texture is ready
+      target.visible = true;
     }, undefined, (err) => {
       console.warn('[BackgroundSystem] Failed to load', url, err);
-      target.material.map = null;
-      target.material.color.set(0x27466f);
-      target.material.opacity = 0.6;
-      target.material.needsUpdate = true;
+      // Hide layer entirely if texture is missing to avoid opaque bands
+      target.visible = false;
     });
   }
 
@@ -184,9 +192,10 @@ export class BackgroundSystem {
   }
 
   setVisible(v) {
-    if (this.backgroundPlane) this.backgroundPlane.visible = v;
+    // Keep sky always visible to prevent accidental disappearance
+    if (this.backgroundPlane) this.backgroundPlane.visible = true;
     if (this.floorBand) this.floorBand.visible = v;
-    if (this.parallaxFar) this.parallaxFar.visible = v;
-    if (this.parallaxNear) this.parallaxNear.visible = v;
+    if (this.parallaxFar) this.parallaxFar.visible = this.enableParallax && v;
+    if (this.parallaxNear) this.parallaxNear.visible = this.enableParallax && v;
   }
 }

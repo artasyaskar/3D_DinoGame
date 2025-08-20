@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // Simple endless-runner obstacle and coin system
 export class ObstacleManager {
@@ -12,6 +13,7 @@ export class ObstacleManager {
     this.cactusProto = null;
     this.coinProto = null;
     this.birdProto = null; // optional flying obstacle
+    this.birdGltf = null;
 
     this.active = [];
     this.coins = [];
@@ -66,6 +68,7 @@ export class ObstacleManager {
     if (birdUrl) {
       try {
         const birdGltf = await this.loader.loadGLB(birdUrl);
+        this.birdGltf = birdGltf; // keep GLTF to access animations
         this.birdProto = birdGltf.scene;
       } catch (e) {
         console.warn('[ObstacleManager] Bird model failed to load, using fallback (ok).', e);
@@ -108,7 +111,8 @@ export class ObstacleManager {
     // Balanced sizes relative to player (~0.6u high) — slightly larger for readability
     normalize(this.cactusProto, 2.2);
     normalize(this.coinProto, 0.9);
-    if (this.birdProto) normalize(this.birdProto, 0.9);
+    // Make bird larger for visibility and closer to cactus readability
+    if (this.birdProto) normalize(this.birdProto, 1.6);
   }
 
   setSpeed(v) { this.speed = v; }
@@ -151,27 +155,52 @@ export class ObstacleManager {
   }
 
   _spawnBird() {
-    const obj = (this.birdProto ? this.birdProto.clone(true) : this._makeBirdFallback());
+    // Use SkeletonUtils.clone to preserve skinning/animation bindings
+    const obj = (this.birdProto ? cloneSkeleton(this.birdProto) : this._makeBirdFallback());
     const wrapper = new THREE.Group();
     wrapper.add(obj);
 
     // Ground relative adjustment not required; we'll place at flying height
     // Set spawn x farther and choose a flying height that can conflict with jump timing
     // Heights tuned so a well-timed jump can clear them
-    const yHeights = [0.7, 1.0, 1.3];
+    const yHeights = [0.6, 1.0, 1.4];
     const y = yHeights[Math.floor(Math.random() * yHeights.length)];
     wrapper.position.set(15 + Math.random() * 8, y, (Math.random() * 2 - 1) * this.zSpread);
 
-    // Slow flap/tilt animation via simple rotation if no animation exists
+    // Setup animation mixer if GLTF had animations; otherwise fallback to tilt
     wrapper.userData = wrapper.userData || {};
-    wrapper.userData.bird = { t: Math.random() * Math.PI * 2 };
+    const u = { t: Math.random() * Math.PI * 2, mixer: null };
+    if (this.birdGltf?.animations?.length) {
+      try {
+        // Create a mixer on the cloned object
+        const mixer = new THREE.AnimationMixer(obj);
+        // Prefer a clip that looks like flying/flapping
+        const names = this.birdGltf.animations.map(c=>c.name.toLowerCase());
+        let clip = null;
+        const pick = ['fly', 'flying', 'flap', 'run', 'walk', 'idle'];
+        for (const key of pick) {
+          const idx = names.findIndex(n=>n.includes(key));
+          if (idx >= 0) { clip = this.birdGltf.animations[idx]; break; }
+        }
+        if (!clip) clip = this.birdGltf.animations[0];
+        const action = mixer.clipAction(clip);
+        action.clampWhenFinished = false;
+        action.loop = THREE.LoopRepeat;
+        action.play();
+        u.mixer = mixer;
+      } catch (e) {
+        // ignore, fallback to tilt
+      }
+    }
+    wrapper.userData.bird = u;
 
-    // Ensure bird draws on top of background
+    // Ensure bird draws correctly
     wrapper.traverse((c)=>{
       if (c.isMesh) {
         if (c.material) {
-          c.material.depthTest = false;
-          c.material.depthWrite = false;
+          // Keep normal depth so collisions/occlusion look correct
+          c.material.depthTest = true;
+          c.material.depthWrite = true;
           if (!c.material.map && c.material.color) c.material.color.set(0xff3366);
         }
         c.renderOrder = 2;
@@ -187,7 +216,7 @@ export class ObstacleManager {
     const b = this._spawnBird();
     // place slightly closer so it's visible quickly when testing
     b.object.position.x = 9.0;
-    b.object.position.y = 1.0;
+    b.object.position.y = 0.25; // low-flying for duck testing
     b.object.position.z = 0.0;
     b.object.scale.setScalar(1.15);
     b.object.renderOrder = 1;
@@ -256,8 +285,8 @@ export class ObstacleManager {
       // Choose spawn with obstacle bias increasing with difficulty
       const obstacleBias = THREE.MathUtils.lerp(0.5, 0.78, this.difficulty);
       if (Math.random() < obstacleBias) {
-        // Decide between cactus and bird at lower difficulties too, so birds appear earlier
-        const useBird = (this.difficulty > 0.15) && (Math.random() < THREE.MathUtils.lerp(0.15, 0.60, this.difficulty));
+        // Decide between cactus and bird even at very low difficulties so birds appear early
+        const useBird = (Math.random() < THREE.MathUtils.lerp(0.22, 0.62, this.difficulty));
         const first = useBird ? this._spawnBird() : this._spawnCactus();
         this.active.push(first);
         // Guard: avoid immediate stacking too close
@@ -278,20 +307,20 @@ export class ObstacleManager {
     }
 
     // Natural periodic bird spawns (Chrome Dino style)
-    if (this.difficulty > 0.10 && this._birdTimer >= this._birdNext) {
+    if (this._birdTimer >= this._birdNext) {
       const b = this._spawnBird();
       this.active.push(b);
       this._birdTimer = 0;
-      this._birdNext = 7 + Math.random()*3; // 7-10s between birds
+      this._birdNext = 6 + Math.random()*3; // 6-9s between birds
       this._birdGuaranteeT = 0; // satisfied
     }
 
     // Hard guarantee fallback: ensure a bird eventually appears
-    if (this.difficulty > 0.10 && this._birdGuaranteeT > 12.0) {
+    if (this._birdGuaranteeT > 6.0) {
       this.spawnBirdPublic();
       this._birdGuaranteeT = 0;
       this._birdTimer = 0;
-      this._birdNext = 7 + Math.random()*3;
+      this._birdNext = 6 + Math.random()*3;
     }
 
     // Move all entities towards player (negative X)
@@ -299,11 +328,16 @@ export class ObstacleManager {
     for (let i = this.active.length-1; i>=0; i--) {
       const o = this.active[i];
       o.object.position.x += dx;
-      // simple bird flap/tilt
+      // simple bird flap/tilt or mixer update
       if (o.type === 'bird' && o.object.userData?.bird) {
-        o.object.userData.bird.t += dt * 6;
-        const s = Math.sin(o.object.userData.bird.t);
-        o.object.rotation.z = s * 0.08;
+        if (o.object.userData.bird.mixer) {
+          o.object.userData.bird.mixer.update(dt);
+        } else {
+          // Fallback to simple rotation if no animation
+          o.object.userData.bird.t += dt * 6;
+          const s = Math.sin(o.object.userData.bird.t);
+          o.object.rotation.z = s * 0.08;
+        }
       }
       o.collider.setFromObject(o.object);
       if (o.object.position.x < -12) {

@@ -34,9 +34,13 @@ export class WeatherSystem {
     this._splashes = []; // { mesh, life, maxLife }
     this._dropTex = this._makeDropTex();
     this._splashTex = this._makeSplashTex();
-
     this.rainIntensity = 0; // 0..1
     this.maxDrops = 650; // stronger visual presence while remaining performant
+    this.fogDensity = 0;
+
+    // Tweening state
+    this.rainTween = { active: false, start: 0, end: 0, time: 0, duration: 2 };
+    this.fogTween = { active: false, start: 0, end: 0, time: 0, duration: 2 };
 
     // Exposure control (post)
     // Lower exposures so WeatherSystem can darken/brighten subtly
@@ -78,6 +82,21 @@ export class WeatherSystem {
     this.phase = (this.phase + dt / this.dayLength) % 1.0;
     const dayFactor = this._dayLightFactor(this.phase); // 0 night..1 day
 
+    // Update tweens
+    if (this.fogTween.active) {
+      this.fogTween.time += dt;
+      const t = Math.min(1, this.fogTween.time / this.fogTween.duration);
+      this.fogDensity = THREE.MathUtils.lerp(this.fogTween.start, this.fogTween.end, t);
+      if (t >= 1) this.fogTween.active = false;
+    }
+    if (this.rainTween.active) {
+        this.rainTween.time += dt;
+        const t = Math.min(1, this.rainTween.time / this.rainTween.duration);
+        this.rainIntensity = THREE.MathUtils.lerp(this.rainTween.start, this.rainTween.end, t);
+        this.sounds?.setRainIntensity?.(this.rainIntensity);
+        if (t >= 1) this.rainTween.active = false;
+    }
+
     // Adjust exposure (post) for perceived brightness across cycle
     if (this.postFX?.material?.uniforms?.exposure) {
       const target = THREE.MathUtils.lerp(this.nightExposure, this.dayExposure, dayFactor);
@@ -96,7 +115,13 @@ export class WeatherSystem {
     const nightSky = new THREE.Color(0x0b1830);
     const tint = nightSky.clone().lerp(daySky, dayFactor);
     this.background?.setSkyTint?.(tint);
-    // Fog distances scale with weather (density already handled by _tweenFog)
+    
+    // Fog distances scale with weather
+    const nearTarget = THREE.MathUtils.lerp(6, 16, 1 - Math.min(1, this.fogDensity * 40));
+    const farTarget = THREE.MathUtils.lerp(40, 110, 1 - Math.min(1, this.fogDensity * 40));
+    this.fog.near += (nearTarget - this.fog.near) * 0.1;
+    this.fog.far += (farTarget - this.fog.far) * 0.1;
+
 
     // Randomized weather transitions
     this.nextIn -= dt;
@@ -116,20 +141,20 @@ export class WeatherSystem {
     return 0.5 + 0.5 * Math.cos(phase * Math.PI * 2.0);
   }
 
-  _tweenFog(targetDensity, _seconds) {
-    // We approximate density by adjusting fog near/far planes to feel denser
-    const curNear = this.fog.near;
-    const curFar = this.fog.far;
-    const nearTarget = THREE.MathUtils.lerp(6, 16, 1 - Math.min(1, targetDensity * 40));
-    const farTarget = THREE.MathUtils.lerp(40, 110, 1 - Math.min(1, targetDensity * 40));
-    this.fog.near = curNear + (nearTarget - curNear) * 0.9;
-    this.fog.far = curFar + (farTarget - curFar) * 0.9;
+  _tweenFog(targetDensity, seconds) {
+    this.fogTween.start = this.fogDensity;
+    this.fogTween.end = targetDensity;
+    this.fogTween.time = 0;
+    this.fogTween.duration = seconds;
+    this.fogTween.active = true;
   }
 
-  _tweenRain(target, _seconds) {
-    const cur = this.rainIntensity;
-    this.rainIntensity = cur + (target - cur) * 0.85;
-    this.sounds?.setRainIntensity?.(this.rainIntensity);
+  _tweenRain(target, seconds) {
+    this.rainTween.start = this.rainIntensity;
+    this.rainTween.end = target;
+    this.rainTween.time = 0;
+    this.rainTween.duration = seconds;
+    this.rainTween.active = true;
   }
 
   _ensureDrop() {

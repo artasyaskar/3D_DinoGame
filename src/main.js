@@ -93,10 +93,15 @@ async function init() {
       game?.jump();
     } else if (e.code === 'KeyP') {
       if (game?.isPaused) game.resume(); else game.pause();
+    } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+      game?.player.setDuck(true);
     }
   });
-
-  // No ducking keybinds
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+      game?.player.setDuck(false);
+    }
+  });
 
   // Simple mobile/desktop pointer: tap/click anywhere in container to jump
   const container = document.getElementById('game-container');
