@@ -7,6 +7,7 @@ const resumeBtn = document.getElementById('resume-btn');
 const shareBtn = document.getElementById('share-btn');
 const muteBtn = document.getElementById('mute-btn');
 const startScreen = document.getElementById('start-screen');
+const loadingScreen = document.getElementById('loading-screen');
 const gameoverScreen = document.getElementById('gameover-screen');
 const pauseScreen = document.getElementById('pause-screen');
 const helpersBtn = document.getElementById('helpers-btn');
@@ -211,7 +212,16 @@ async function init() {
 
 startBtn.addEventListener('click', async () => {
   hideOverlay(startScreen);
-  if (!game) await init();
+  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const minDim = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+  const isNarrow = minDim > 0 ? minDim <= 820 : false;
+  const showLoader = !!loadingScreen && (isTouch || isNarrow);
+  if (showLoader) showOverlay(loadingScreen);
+  try {
+    if (!game) await init();
+  } finally {
+    if (showLoader) hideOverlay(loadingScreen);
+  }
   await game.start();
 });
 

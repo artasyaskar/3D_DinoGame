@@ -10,6 +10,12 @@
   "buildCommand": "npm run build",
   "headers": [
     {
+      "source": "/style.css",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
       "source": "/(.*)\\.(css|js|mjs|wasm|gif|png|jpg|jpeg|svg|webp|ico|ttf|otf|woff|woff2)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }

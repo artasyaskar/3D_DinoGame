@@ -220,6 +220,25 @@ button:focus-visible, .owner-badge:focus-visible, .hud:focus-visible {
 .center .overlay.visible { opacity: 1; transform: translateY(0) scale(1); }
 .btns { display:flex; gap:14px; justify-content:center; }
 
+/* Loading overlay */
+#loading-screen .loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+#loading-screen .loader-text { color: var(--muted); font-size: 13px; }
+#loading-screen .spinner {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: var(--brand-3);
+  animation: spin 0.9s linear infinite;
+  box-shadow: 0 0 10px rgba(42,199,240,0.3);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* Share grid for fallback share menu */
 .share-grid {
   display: grid;
