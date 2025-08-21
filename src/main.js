@@ -153,55 +153,47 @@ async function init() {
   container.addEventListener('pointerup', onPointerUp, { passive: true });
   container.addEventListener('pointercancel', onPointerUp, { passive: true });
 
-  // Swipe gestures: swipe down to duck (hold while swiping), swipe up to jump
-  let _swipeStart = null;
-  const SWIPE_MIN = 24; // px threshold for swipe detection
-  const TAP_MOVE_MAX = 16; // px movement to still consider a tap
-  const TAP_TIME_MAX = 280; // ms
-  container.addEventListener('touchstart', (e) => {
+  // Touch controls: tap to jump, swipe down to duck
+  let touchStart = null; // { x, y, time }
+  const SWIPE_MIN_DY = 24; // min pixels to swipe down to duck
+
+  const handleTouchStart = (e) => {
+    if (!game || !game.isRunning || game.isPaused) return;
+    if (!e.touches || e.touches.length !== 1) return;
+    // For taps, we jump on touchstart for minimum latency
+    const now = performance.now();
+    const boosted = (now - _lastTouchTap) <= BOOST_WINDOW;
+    _lastTouchTap = now;
+    game.jump(boosted ? JUMP_DOUBLE : JUMP_SINGLE);
+    game.setJumpHeld(true);
+    // Store initial touch point for swipe detection
+    const t = e.touches[0];
+    touchStart = { x: t.clientX, y: t.clientY, time: now };
+  };
+
+  const handleTouchMove = (e) => {
+    if (!game || !game.isRunning || !touchStart) return;
     if (!e.touches || e.touches.length !== 1) return;
     const t = e.touches[0];
-    _swipeStart = { x: t.clientX, y: t.clientY, time: performance.now() };
-  }, { passive: true });
-  container.addEventListener('touchmove', (e) => {
-    if (!game || !game.isRunning) return;
-    if (!_swipeStart || !e.touches || e.touches.length !== 1) return;
-    const t = e.touches[0];
-    const dy = t.clientY - _swipeStart.y;
-    // If swiping down beyond threshold, engage duck
-    if (dy > SWIPE_MIN) {
+    const dy = t.clientY - touchStart.y;
+    // If swiping down far enough, engage duck
+    if (dy > SWIPE_MIN_DY) {
       game.player?.setDuck(true);
+      touchStart = null; // consume swipe
     }
-  }, { passive: true });
-  const endSwipe = (e) => {
-    if (!game || !game.isRunning) { _swipeStart = null; return; }
-    const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
-    if (_swipeStart && t) {
-      const dx = t.clientX - _swipeStart.x;
-      const dy = t.clientY - _swipeStart.y;
-      const dist2 = dx*dx + dy*dy;
-      const dt = performance.now() - _swipeStart.time;
-      const isTap = dist2 <= (TAP_MOVE_MAX*TAP_MOVE_MAX) && dt <= TAP_TIME_MAX;
-      if (isTap) {
-        // Single tap -> strong jump; double tap within window -> strongest
-        const now = performance.now();
-        const boosted = (now - _lastTouchTap) <= BOOST_WINDOW;
-        _lastTouchTap = now;
-        game.jump(boosted ? JUMP_DOUBLE : JUMP_SINGLE);
-      } else if (dy < -SWIPE_MIN) {
-        // Swipe up -> strong jump
-        const now = performance.now();
-        const boosted = (now - _lastTouchTap) <= BOOST_WINDOW;
-        _lastTouchTap = now;
-        game.jump(boosted ? JUMP_DOUBLE : JUMP_SINGLE);
-      }
-    }
-    // Always release duck on touch end
-    game.player?.setDuck(false);
-    _swipeStart = null;
   };
-  container.addEventListener('touchend', endSwipe, { passive: true });
-  container.addEventListener('touchcancel', endSwipe, { passive: true });
+
+  const handleTouchEnd = () => {
+    // Always release jump hold and duck on touch end
+    game?.setJumpHeld(false);
+    game?.player.setDuck(false);
+    touchStart = null;
+  };
+
+  container.addEventListener('touchstart', handleTouchStart, { passive: true });
+  container.addEventListener('touchmove', handleTouchMove, { passive: true });
+  container.addEventListener('touchend', handleTouchEnd, { passive: true });
+  container.addEventListener('touchcancel', handleTouchEnd, { passive: true });
 
   // Handle orientation changes explicitly
   window.addEventListener('orientationchange', () => setTimeout(() => game.onResize(), 50));
