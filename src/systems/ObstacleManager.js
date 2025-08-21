@@ -253,29 +253,15 @@ export class ObstacleManager {
   spawnBirdPublic() {
     const b = this._spawnBird();
     // place slightly closer so it's visible quickly when testing
-    // Previously this was far to the right (x=9) and often off-screen in our side camera.
-    // Spawn near the player/camera center so it is immediately visible.
-    b.object.position.x = -1.5;
-    b.object.position.y = 0.8; // raise a bit so it doesn't immediately collide
-    b.object.position.z = 0.0; // center lane
-    b.object.scale.setScalar(2.0); // larger so it's unmistakable
-    b.object.renderOrder = 10;
-    // Ensure it's visible regardless of frustum quirks and material settings
-    b.object.userData = b.object.userData || {};
-    b.object.userData.debugNoHit = true; // do not end game for debug spawn
-    b.object.traverse((c)=>{
-      if (c.isObject3D) c.frustumCulled = false;
-      if (c.isMesh) {
-        const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-        mat.transparent = false; mat.opacity = 1.0;
-        mat.depthTest = true; mat.depthWrite = true; mat.side = THREE.DoubleSide;
-        c.material = mat;
-      }
-    });
+    b.object.position.x = 9.0;
+    b.object.position.y = 0.25; // low-flying for duck testing
+    b.object.position.z = 0.0;
+    b.object.scale.setScalar(1.15);
+    b.object.renderOrder = 1;
     this.active.push(b);
     this.spawnTimer = 0; // reset cadence
     if (typeof window !== 'undefined') {
-      console.log('[ObstacleManager] test bird spawned in-view. active obstacles:', this.active.length, 'coins:', this.coins.length);
+      console.log('[ObstacleManager] active obstacles:', this.active.length, 'coins:', this.coins.length);
     }
   }
 
@@ -471,8 +457,6 @@ export class ObstacleManager {
     pb.min.z -= zTol;
     pb.max.z += zTol;
     for (const o of this.active) {
-      // Skip debug-spawned entities that should not cause hits
-      if (o.object?.userData?.debugNoHit) continue;
       if (o.collider.intersectsBox(pb)) return true;
     }
     return false;
