@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <!-- build: enhanced-ui v-20250820-0805 -->
   <meta name="x-build" content="enhanced-ui-v-20250820-0805" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' ry='20' fill='%230b0f1a'/%3E%3Ctext x='50' y='58' font-size='52' text-anchor='middle' fill='%23ffffff'%3E🦖%3C/text%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' ry='20' fill='%230b0f1a'/%3E%3Ctext x='50' y='58' font-size='52' text-anchor='middle' fill='%23ffffff'%3E%F0%9F%A6%96%3C/text%3E%3C/svg%3E" />
   <title>3D Dino Game</title>
   <!-- External stylesheet served from public/ at site root by Vite -->
   <link rel="stylesheet" href="/style.css?v=20250820-1907" />
@@ -17,6 +17,14 @@
       <div class="score" data-label="Score"><span id="score">0</span></div>
       <div class="score" data-label="High"><span id="high-score">0</span></div>
       <div class="diff" data-label="Difficulty"><div class="diff-bar"><div id="diff-fill" class="diff-fill"></div></div></div>
+      <div id="magnet" class="badge magnet" title="Magnet">
+        <div class="icon" aria-hidden="true"></div>
+        <div class="timer"><div id="magnet-fill" class="timer-fill"></div></div>
+      </div>
+      <div id="combo" class="badge combo" title="Combo">
+        <div class="icon" aria-hidden="true"></div>
+        <div class="value" id="combo-value">x0</div>
+      </div>
       <div class="hint">Tap/Click to jump • Double-press/Double-tap to jump higher • P to pause</div>
       <button id="helpers-btn" class="secondary" style="display:none">Helpers</button>
     </div>

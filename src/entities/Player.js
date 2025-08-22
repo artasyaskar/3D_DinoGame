@@ -118,8 +118,9 @@ export class Player {
     box.getCenter(center);
     model.position.y += (size.y / 2) - center.y;
 
-    // Turn model to face +X (to the right) so we see its side profile
-    model.rotation.y = Math.PI / 2;
+    // Flip model so the head appears on the LEFT side on screen
+    // (face -X direction instead of +X)
+    model.rotation.y = -Math.PI / 2;
 
     this.object.add(model);
 

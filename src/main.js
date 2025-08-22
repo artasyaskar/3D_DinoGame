@@ -29,6 +29,10 @@ const finalScoreEl = document.getElementById('final-score');
 const highScoreEls = Array.from(document.querySelectorAll('#high-score, #final-high-score'));
 const diffFill = document.getElementById('diff-fill');
 const flashEl = document.getElementById('flash');
+// New HUD elements
+const magnetEl = document.getElementById('magnet');
+const magnetFill = document.getElementById('magnet-fill');
+const comboValueEl = document.getElementById('combo-value');
 
 let game;
 // Tap/double-tap detection and jump strengths
@@ -38,6 +42,7 @@ let _lastTouchTap = 0;
 const BOOST_WINDOW = 260;      // ms window for double taps
 const JUMP_SINGLE = 1.35;      // strong jump
 const JUMP_DOUBLE = 1.75;      // strongest jump
+let _magnetMaxSeen = 0;        // tracks current activation max for progress
 
 function hide(el){ el.classList.add('hidden'); }
 function show(el){ el.classList.remove('hidden'); }
@@ -76,6 +81,28 @@ async function init() {
       if (diffFill && game?.getDifficulty) {
         const d = Math.max(0, Math.min(1, game.getDifficulty()));
         diffFill.style.width = Math.round(d * 100) + '%';
+      }
+      // Update magnet HUD progress
+      if (game?.getMagnetTime && magnetEl) {
+        const t = game.getMagnetTime();
+        if (t > 0) {
+          magnetEl.classList.remove('hidden');
+          _magnetMaxSeen = Math.max(_magnetMaxSeen, t);
+          if (magnetFill) {
+            const denom = Math.max(0.001, _magnetMaxSeen);
+            const pct = Math.max(0, Math.min(1, t / denom));
+            magnetFill.style.width = Math.round(pct * 100) + '%';
+          }
+        } else {
+          magnetEl.classList.add('hidden');
+          _magnetMaxSeen = 0;
+          if (magnetFill) magnetFill.style.width = '0%';
+        }
+      }
+      // Update combo HUD value
+      if (game?.getCombo && comboValueEl) {
+        const c = game.getCombo() | 0;
+        comboValueEl.textContent = 'x' + c;
       }
     },
     onGameOver: (score) => {
@@ -200,6 +227,48 @@ async function init() {
 
   // HUD Helpers toggle
   helpersBtn?.addEventListener('click', () => game?.toggleHelpers());
+
+  // Basic gamepad polling (A/Cross -> Jump, Start -> Pause/Resume)
+  const gpState = {
+    aPrev: false,
+    startPrev: false,
+    lastATap: 0,
+  };
+  const GP_BOOST_WINDOW = BOOST_WINDOW; // reuse same window
+
+  const pollGamepad = () => {
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = pads && pads[0];
+      if (gp && gp.connected && game && game.isRunning && !game.gameOver) {
+        const aNow = !!(gp.buttons[0] && gp.buttons[0].pressed); // A/Cross
+        const startNow = !!(gp.buttons[9] && gp.buttons[9].pressed); // Start/Options
+
+        // A button edge: tap to jump, hold to sustain
+        if (aNow && !gpState.aPrev) {
+          const now = performance.now();
+          const boosted = (now - gpState.lastATap) <= GP_BOOST_WINDOW;
+          gpState.lastATap = now;
+          game.jump(boosted ? JUMP_DOUBLE : JUMP_SINGLE);
+          game.setJumpHeld(true);
+        } else if (!aNow && gpState.aPrev) {
+          game.setJumpHeld(false);
+        }
+        gpState.aPrev = aNow;
+
+        // Start button edge: toggle pause
+        if (startNow && !gpState.startPrev) {
+          if (game.isPaused) game.resume(); else game.pause();
+        }
+        gpState.startPrev = startNow;
+      } else {
+        // Reset edges if no pad
+        gpState.aPrev = false; gpState.startPrev = false;
+      }
+    } catch {}
+    requestAnimationFrame(pollGamepad);
+  };
+  requestAnimationFrame(pollGamepad);
 }
 
 startBtn.addEventListener('click', async () => {
@@ -219,6 +288,13 @@ startBtn.addEventListener('click', async () => {
 
 restartBtn.addEventListener('click', async () => {
   hideOverlay(gameoverScreen);
+  // Clear HUD immediately so stale values aren't visible between frames
+  if (comboValueEl) comboValueEl.textContent = 'x0';
+  if (magnetEl) magnetEl.classList.add('hidden');
+  if (magnetFill) magnetFill.style.width = '0%';
+  _magnetMaxSeen = 0;
+  if (scoreEl) scoreEl.textContent = '0';
+  if (diffFill) diffFill.style.width = '0%';
   await game.restart();
 });
 

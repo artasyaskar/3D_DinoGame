@@ -159,6 +159,9 @@ export class Game {
     this.hasStumbled = false;
     this.isStumbling = false;
     this.stumbleCooldown = 0;
+    // Light combo and magnet power-up state
+    this.combo = 0;
+    this.magnetTime = 0; // seconds remaining for coin magnet
 
     // Camera shake state
     this._shakeTime = 0;
@@ -168,6 +171,9 @@ export class Game {
 
     // Post-resize auto-fit frames to ensure proper vertical fit on mobile
     this._fitFramesRemaining = 0;
+
+    // Run cadence for footstep dust (seconds until next step effect)
+    this._stepTimer = 0;
 
     // Camera defaults (Chrome Dino style side view)
     this._camTargetY = 2.2; // fixed vertical framing
@@ -373,6 +379,11 @@ export class Game {
     this.hasStumbled = false;
     this.isStumbling = false;
     this.stumbleCooldown = 0;
+    // Reset combo and power-ups
+    this.combo = 0;
+    this.magnetTime = 0;
+    // Re-arm footstep cadence
+    this._stepTimer = 0;
   }
 
   clearSceneTransient() {
@@ -535,12 +546,44 @@ export class Game {
     this.particles?.update(dt);
 
     // Collision checks - immediate game over on hit
-    if (this.obstacles.collidesWith(this.player.getCollider())) {
+    const hit = this.obstacles.collidesWith(this.player.getCollider());
+    if (hit) {
       this.sounds.playHit();
       this.sounds.duck?.(500, 0.18);
       this.triggerShake(0.25, 0.25);
       this.endGame();
       return;
+    }
+
+    // Magnet attraction before standard collection
+    if (this.magnetTime > 0) {
+      this.magnetTime = Math.max(0, this.magnetTime - dt);
+      const pp = this.player.object.position;
+      const attracted = this.obstacles.attractCoinsTowards(pp.x, Math.max(0.4, pp.y), pp.z, 3.0, dt);
+      if (attracted && attracted.length) {
+        let regularCoins = 0, powerUpCoins = 0;
+        const positions = [];
+        for (const c of attracted) {
+          if (c.isPowerUp) powerUpCoins++; else regularCoins++;
+          const p = c.object?.position || pp;
+          positions.push(new THREE.Vector3(p.x, Math.max(0.05, p.y), p.z));
+        }
+        // Score and FX for magnet-collected coins
+        if (regularCoins || powerUpCoins) {
+          this.sounds.playCoin();
+          const scoreGained = regularCoins * 50 + powerUpCoins * 250;
+          this.score += scoreGained;
+          this.onCoin?.(scoreGained);
+          this.triggerShake(0.05, 0.1);
+          if (this.particles) {
+            for (const pos of positions) this.particles.spawnSparkleAt(pos.x, pos.y, pos.z, 8);
+          }
+        }
+        // Extend magnet on power-up coins gathered via magnet
+        if (powerUpCoins > 0) this.magnetTime += powerUpCoins * 6.0;
+        // Increase combo
+        this.combo += regularCoins + powerUpCoins;
+      }
     }
 
     const coinRes = this.obstacles.collectCoins(this.player.getCollider());
@@ -557,11 +600,31 @@ export class Game {
           this.particles.spawnSparkleAt(pos.x, pos.y, pos.z, 8);
         }
       }
+      // Extend magnet duration when power-up coins are taken normally
+      if (coinRes.powerUpCoins > 0) this.magnetTime += coinRes.powerUpCoins * 6.0;
+      // Increment combo counter
+      this.combo += (coinRes.regularCoins + coinRes.powerUpCoins);
     }
 
     // Score over time (slower, mostly time-based with mild speed influence)
     this.score += dt * (6.0 + this.speed * 0.6);
     this.onScore?.(this.score);
+
+    // Footstep dust while running on ground (Chrome Dino vibe)
+    if (this.player?.isOnGround && !this.isStumbling && this.speed > 2 && this.particles) {
+      this._stepTimer -= dt;
+      if (this._stepTimer <= 0) {
+        const pos = this.player.object.position;
+        this.particles.spawnDustAt(pos.x - 0.2, pos.z, 4);
+        // Cadence scales inversely with speed; clamp to reasonable range
+        const base = 0.22; // at ~8 speed
+        const period = Math.max(0.09, base * (8 / Math.max(2, this.speed)));
+        this._stepTimer = period;
+      }
+    } else {
+      // Re-arm quickly when airborne or stumbling so we get a puff soon after landing
+      this._stepTimer = Math.min(this._stepTimer, 0.06);
+    }
 
     // Fixed side-on camera (Chrome Dino style)
     if (this.camera.isOrthographicCamera) {
@@ -627,6 +690,8 @@ export class Game {
   }
 
   getDifficulty(){ return this._difficulty; }
+  getMagnetTime(){ return this.magnetTime || 0; }
+  getCombo(){ return this.combo || 0; }
 
   stumble() {
     if (this.isStumbling) return;

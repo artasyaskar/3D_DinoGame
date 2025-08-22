@@ -36,6 +36,8 @@ export class ObstacleManager {
     this._birdGuaranteeT = 0; // hard guarantee backup
     this._birdTimer = 0;      // periodic natural spawns
     this._birdNext = 6 + Math.random()*2; // 6-8s between natural spawns (harder)
+    // Pool placeholders (future): keep arrays for potential pooling
+    this._dead = [];
   }
 
   _scheduleNextGap(wasDouble = false) {
@@ -161,22 +163,38 @@ export class ObstacleManager {
   dispose() { this.reset(); }
 
   _spawnCactus() {
-    const obj = (this.cactusProto ? this.cactusProto.clone(true) : this._makeCactusFallback());
     const wrapper = new THREE.Group();
-    wrapper.add(obj);
+    const primary = (this.cactusProto ? this.cactusProto.clone(true) : this._makeCactusFallback());
+    wrapper.add(primary);
 
-    // Keep native size from normalization (no extra scaling)
+    // Random size variety (0.85..1.25)
+    const s = 0.85 + Math.random() * 0.4;
+    primary.scale.multiplyScalar(s);
 
-    // Ensure base sits on ground y=0
-    const box = new THREE.Box3().setFromObject(wrapper);
+    // Ground base to y=0
+    let box = new THREE.Box3().setFromObject(wrapper);
     const size = new THREE.Vector3();
     const center = new THREE.Vector3();
     box.getSize(size); box.getCenter(center);
-    obj.position.y += (size.y/2) - center.y;
+    primary.position.y += (size.y/2) - center.y;
 
-    // Spawn a bit farther so approach timing feels fairer like Chrome Dino
+    // 20% chance of a side-by-side double cactus cluster
+    if (Math.random() < 0.2) {
+      const other = (this.cactusProto ? this.cactusProto.clone(true) : this._makeCactusFallback());
+      const s2 = 0.8 + Math.random() * 0.5;
+      other.scale.multiplyScalar(s2);
+      // Slight offset on X so it becomes a short cluster to hop
+      other.position.x = 1.1 + Math.random()*0.5;
+      // Align base
+      const b2 = new THREE.Box3().setFromObject(other);
+      const sz2 = new THREE.Vector3(); const ct2 = new THREE.Vector3();
+      b2.getSize(sz2); b2.getCenter(ct2);
+      other.position.y += (sz2.y/2) - ct2.y;
+      wrapper.add(other);
+    }
+
+    // Spawn position and lane
     wrapper.position.set(15 + Math.random()*9, 0, (Math.random()*2-1)*this.zSpread);
-
     this.group.add(wrapper);
     return { object: wrapper, collider: new THREE.Box3().setFromObject(wrapper) };
   }
@@ -457,9 +475,18 @@ export class ObstacleManager {
     pb.min.z -= zTol;
     pb.max.z += zTol;
     for (const o of this.active) {
-      if (o.collider.intersectsBox(pb)) return true;
+      if (o.collider.intersectsBox(pb)) return o; // return the first colliding obstacle
     }
-    return false;
+    return null;
+  }
+
+  removeObstacle(ob) {
+    if (!ob) return;
+    const idx = this.active.indexOf(ob);
+    if (idx >= 0) {
+      this.group.remove(ob.object);
+      this.active.splice(idx, 1);
+    }
   }
 
   collectCoins(playerBox) {
@@ -482,5 +509,35 @@ export class ObstacleManager {
       }
     }
     return { regularCoins, powerUpCoins, positions };
+  }
+
+  // Magnet helper: move coins toward a point and auto-collect when very close.
+  attractCoinsTowards(x, y, z, radius, dt) {
+    const r2 = radius * radius;
+    const collected = [];
+    for (let i = this.coins.length - 1; i >= 0; i--) {
+      const c = this.coins[i];
+      const p = c.object.position;
+      const dx = x - p.x, dy = (y - p.y), dz = z - p.z;
+      const dist2 = dx*dx + dy*dy + dz*dz;
+      if (dist2 <= r2) {
+        // Pull speed increases as coin gets closer
+        const dist = Math.max(0.0001, Math.sqrt(dist2));
+        const pull = (6 + this.speed * 0.6) * (1 + (radius - dist));
+        p.x += (dx / dist) * pull * dt;
+        p.y += (dy / dist) * pull * dt;
+        p.z += (dz / dist) * pull * dt;
+        // Close enough -> collect
+        if (dist < 0.35) {
+          collected.push(c);
+          this.group.remove(c.object);
+          this.coins.splice(i, 1);
+        } else {
+          // Update collider after moving
+          c.collider.setFromObject(c.object);
+        }
+      }
+    }
+    return collected; // array of coin entries (respect isPowerUp if present)
   }
 }
