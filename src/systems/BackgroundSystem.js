@@ -20,7 +20,7 @@ export class BackgroundSystem {
   init() {
     // Base background plane
     const bgGeo = new THREE.PlaneGeometry(400, 200, 1, 1);
-    const bgMat = new THREE.MeshBasicMaterial({ color: 0x25466f, depthWrite: false, depthTest: false });
+    const bgMat = new THREE.MeshBasicMaterial({ color: 0x11263d, depthWrite: false, depthTest: false });
     this.backgroundPlane = new THREE.Mesh(bgGeo, bgMat);
     this.backgroundPlane.position.set(0, 4, -20);
     this.backgroundPlane.renderOrder = -3;
@@ -41,11 +41,11 @@ export class BackgroundSystem {
     this._bandGradTex = new THREE.CanvasTexture(bandCanvas);
     this._bandGradTex.wrapS = THREE.ClampToEdgeWrapping;
     this._bandGradTex.wrapT = THREE.ClampToEdgeWrapping;
-    const bandMat = new THREE.MeshBasicMaterial({ map: this._bandGradTex, transparent: true, opacity: 0.25, depthWrite: false, depthTest: false });
+    const bandMat = new THREE.MeshBasicMaterial({ map: this._bandGradTex, transparent: true, opacity: 0.36, depthWrite: false, depthTest: false });
     this.floorBand = new THREE.Mesh(bandGeo, bandMat);
     this.floorBand.position.set(0, 0.02, -5); // push farther back; no depth test so it stays behind
     this.floorBand.receiveShadow = false;
-    // Show by default for ground separation
+    // Hide by default for a cleaner, non-hazy background
     this.floorBand.visible = true;
     this.scene.add(this.floorBand);
 
@@ -57,7 +57,7 @@ export class BackgroundSystem {
       const farMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.18,
         depthWrite: false,
         depthTest: true,
         premultipliedAlpha: true,
@@ -66,7 +66,7 @@ export class BackgroundSystem {
       const nearMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
-        opacity: 0.25,
+        opacity: 0.12,
         depthWrite: false,
         depthTest: true,
         premultipliedAlpha: true,
@@ -79,6 +79,7 @@ export class BackgroundSystem {
       this.parallaxNear.position.set(0, 3.8, -8);
       this.parallaxFar.renderOrder = -2;
       this.parallaxNear.renderOrder = -1;
+      // Show parallax layers with reduced opacity for a crisp but non-hazy background
       this.parallaxFar.visible = true;
       this.parallaxNear.visible = true;
       this.scene.add(this.parallaxFar, this.parallaxNear);

@@ -3,18 +3,19 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 
 // Simple endless-runner obstacle and coin system
 export class ObstacleManager {
-  constructor(scene, assetLoader, sounds, particles) {
+  constructor(scene, assetLoader, sounds) {
     this.scene = scene;
     this.loader = assetLoader;
     this.sounds = sounds;
-    this.particles = particles;
 
     this.speed = 8;
 
     this.cactusProto = null;
+    this.enemyProto = null;
     this.coinProto = null;
     this.birdProto = null; // optional flying obstacle
     this.birdGltf = null;
+    this.enemyGltf = null;
 
     this.active = [];
     this.coins = [];
@@ -38,6 +39,75 @@ export class ObstacleManager {
     this._birdNext = 6 + Math.random()*2; // 6-8s between natural spawns (harder)
     // Pool placeholders (future): keep arrays for potential pooling
     this._dead = [];
+  }
+
+  // Helper: build collider entry with cached size/offset
+  _buildEntry(wrapper, type) {
+    const box = new THREE.Box3().setFromObject(wrapper);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size); box.getCenter(center);
+    const offset = center.sub(wrapper.position.clone());
+    return { object: wrapper, collider: new THREE.Box3(), type, _colSize: size.clone(), _colOffset: offset.clone() };
+  }
+
+  _spawnEnemy() {
+    const wrapper = new THREE.Group();
+    // Use SkeletonUtils.clone to preserve skinning/animation if present
+    const primary = (this.enemyProto ? cloneSkeleton(this.enemyProto) : this._makeEnemyFallback());
+    wrapper.add(primary);
+
+    // Slightly larger than cactus by default, with some variation (1.1..1.4)
+    const s = 1.1 + Math.random() * 0.3;
+    primary.scale.multiplyScalar(s);
+
+    // Ground base to y=0
+    let box = new THREE.Box3().setFromObject(wrapper);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size); box.getCenter(center);
+    primary.position.y += (size.y/2) - center.y;
+
+    // Spawn position and lane; face toward player (left)
+    wrapper.position.set(15 + Math.random()*9, 0, (Math.random()*2-1)*this.zSpread);
+    wrapper.rotation.y = Math.PI;
+
+    // Setup walk/run animation if available; otherwise slight body bob
+    wrapper.userData = wrapper.userData || {};
+    const u = {
+      t: Math.random() * Math.PI * 2,
+      mixer: null,
+      baseRot: 0,
+      baseY: 0,
+    };
+    if (this.enemyGltf?.animations?.length) {
+      try {
+        const mixer = new THREE.AnimationMixer(primary);
+        const names = this.enemyGltf.animations.map(c=>c.name.toLowerCase());
+        let clip = null;
+        const pick = ['run', 'walk', 'jog', 'idle'];
+        for (const key of pick) {
+          const idx = names.findIndex(n=>n.includes(key));
+          if (idx >= 0) { clip = this.enemyGltf.animations[idx]; break; }
+        }
+        if (!clip) clip = this.enemyGltf.animations[0];
+        const action = mixer.clipAction(clip);
+        action.clampWhenFinished = false;
+        action.loop = THREE.LoopRepeat;
+        action.play();
+        u.mixer = mixer;
+      } catch(_) { /* fallback below */ }
+    }
+    wrapper.userData.enemy = u;
+
+    // Ensure correct drawing properties
+    wrapper.traverse((c)=>{
+      if (c.isMesh && c.material) {
+        c.material.depthTest = true; c.material.depthWrite = true;
+      }
+    });
+    this.group.add(wrapper);
+    return this._buildEntry(wrapper, 'enemy');
   }
 
   _scheduleNextGap(wasDouble = false) {
@@ -74,6 +144,14 @@ export class ObstacleManager {
     return mesh;
   }
 
+  _makeEnemyFallback() {
+    const geo = new THREE.BoxGeometry(0.7, 1.2, 0.5);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x8b5cf6 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = false; mesh.receiveShadow = false;
+    return mesh;
+  }
+
   _makeCoinFallback() {
     const geo = new THREE.CylinderGeometry(0.25, 0.25, 0.06, 20);
     const mat = new THREE.MeshBasicMaterial({ color: 0xffd34d });
@@ -83,7 +161,7 @@ export class ObstacleManager {
     return mesh;
   }
 
-  async prepare({ cactusUrl, coinUrl, birdUrl }) {
+  async prepare({ cactusUrl, coinUrl, birdUrl, enemyUrl }) {
     const cactusGltf = await this.loader.loadGLB(cactusUrl);
     const coinGltf = await this.loader.loadGLB(coinUrl);
     this.cactusProto = cactusGltf.scene;
@@ -98,22 +176,52 @@ export class ObstacleManager {
         console.warn('[ObstacleManager] Bird model failed to load, using fallback (ok).', e);
         this.birdProto = null;
       }
+    // Try load enemy model (optional ground obstacle)
+    if (enemyUrl) {
+      try {
+        const enemyGltf = await this.loader.loadGLB(enemyUrl);
+        this.enemyGltf = enemyGltf;
+        this.enemyProto = enemyGltf.scene;
+      } catch (e) {
+        console.warn('[ObstacleManager] Enemy model failed to load, skipping.', e);
+        this.enemyProto = null;
+      }
+    }
     }
 
     // Normalize scales and center/ground prototypes
-    const normalize = (obj, targetHeight) => {
+    const normalize = (obj, targetHeight, opts = {}) => {
+      const preserve = !!opts.preserveMaterials;
+      const unlit = !!opts.unlit; // convert to MeshBasic keeping textures for consistent look without lights
       obj.traverse((c)=>{ 
         if (c.isMesh){ 
           c.castShadow = false; c.receiveShadow = false; 
-          const oldMat = c.material;
-          const basic = new THREE.MeshBasicMaterial({ color: 0xffffff });
-          if (oldMat) {
-            if (oldMat.map) basic.map = oldMat.map;
-            if (oldMat.alphaMap) { basic.alphaMap = oldMat.alphaMap; basic.transparent = true; }
-            if (oldMat.transparent) { basic.transparent = true; basic.opacity = oldMat.opacity; }
-            if (oldMat.side !== undefined) basic.side = oldMat.side;
+          if (!preserve) {
+            const oldMat = c.material;
+            const basic = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            // Preserve textures and transparency
+            if (oldMat) {
+              if (oldMat.map) {
+                basic.map = oldMat.map;
+                if (basic.map.encoding !== THREE.sRGBEncoding) basic.map.encoding = THREE.sRGBEncoding;
+                basic.map.needsUpdate = true;
+              }
+              if (oldMat.alphaMap) { basic.alphaMap = oldMat.alphaMap; basic.transparent = true; }
+              if (oldMat.transparent) { basic.transparent = true; basic.opacity = oldMat.opacity; }
+              if (oldMat.side !== undefined) basic.side = oldMat.side;
+            }
+            // Critical: allow skinned animation on GLTFs
+            if (c.isSkinnedMesh || c.skeleton) basic.skinning = true;
+            if (unlit) { basic.toneMapped = false; }
+            c.material = basic;
+          } else {
+            // Ensure skinned flag preserved on existing materials
+            if (c.material) {
+              c.material.skinning = !!(c.isSkinnedMesh || c.skeleton);
+              // Make sure textures are visible fully (unlit look)
+              if (c.material.map) { /* keep as-is to preserve original dark look */ }
+            }
           }
-          c.material = basic;
         }
       });
       let box = new THREE.Box3().setFromObject(obj);
@@ -138,7 +246,19 @@ export class ObstacleManager {
     // Cactus and bird scale up on desktop; coins remain the same size
     normalize(this.cactusProto, 2.2 * gs);
     normalize(this.coinProto, 0.9);
-    if (this.birdProto) normalize(this.birdProto, 1.6 * gs);
+    if (this.birdProto) {
+      // Match cactus height so visual weight is consistent
+      normalize(this.birdProto, 2.2 * gs);
+      // Many GLBs have -Z forward; flip so the face looks towards the camera
+      this.birdProto.rotation.y = Math.PI;
+    }
+    if (this.enemyProto) {
+      // Use unlit materials with original texture to avoid yellow/washed colors and lighting dependence
+      // Make the rat slightly larger than cactus by default
+      normalize(this.enemyProto, 2.6 * gs, { unlit: true });
+      // Keep prototype at neutral rotation; wrapper decides facing
+      this.enemyProto.rotation.y = 0;
+    }
   }
 
   setSpeed(v) { this.speed = v; }
@@ -196,7 +316,7 @@ export class ObstacleManager {
     // Spawn position and lane
     wrapper.position.set(15 + Math.random()*9, 0, (Math.random()*2-1)*this.zSpread);
     this.group.add(wrapper);
-    return { object: wrapper, collider: new THREE.Box3().setFromObject(wrapper) };
+    return this._buildEntry(wrapper, undefined);
   }
 
   _spawnBird() {
@@ -263,8 +383,7 @@ export class ObstacleManager {
       }
     });
     this.group.add(wrapper);
-    if (typeof window !== 'undefined') console.log('[ObstacleManager] spawn bird @', wrapper.position.toArray());
-    return { object: wrapper, collider: new THREE.Box3().setFromObject(wrapper), type: 'bird' };
+    return this._buildEntry(wrapper, 'bird');
   }
 
   // Public: force spawn a bird for testing
@@ -302,12 +421,8 @@ export class ObstacleManager {
       const baseY = 1.2 + Math.random() * 1.4;
       wrap.position.set(baseX, baseY, z);
       this.group.add(wrap);
-      created.push({
-        object: wrap,
-        collider: new THREE.Box3().setFromObject(wrap),
-        spin: Math.random() * Math.PI * 2,
-        isPowerUp: true,
-      });
+      const entry = this._buildEntry(wrap, 'coin');
+      created.push({ ...entry, spin: Math.random() * Math.PI * 2, isPowerUp: true });
       return created;
     }
   
@@ -343,11 +458,8 @@ export class ObstacleManager {
   
       wrap.position.set(baseX + i * 1.5, 0, z);
       this.group.add(wrap);
-      created.push({
-        object: wrap,
-        collider: new THREE.Box3().setFromObject(wrap),
-        spin: Math.random() * Math.PI * 2
-      });
+      const entry = this._buildEntry(wrap, 'coin');
+      created.push({ ...entry, spin: Math.random() * Math.PI * 2 });
     }
     return created;
   }
@@ -371,15 +483,21 @@ export class ObstacleManager {
       // Choose spawn with obstacle bias increasing with difficulty
       const obstacleBias = THREE.MathUtils.lerp(0.56, 0.86, this.difficulty);
       if (Math.random() < obstacleBias) {
-        // Decide between cactus and bird even at very low difficulties so birds appear early
+        // Decide between flying bird vs ground obstacle
         const useBird = (Math.random() < THREE.MathUtils.lerp(0.22, 0.62, this.difficulty));
-        const first = useBird ? this._spawnBird() : this._spawnCactus();
+        const spawnGround = () => {
+          // Randomly choose between cactus and enemy when available
+          const hasEnemy = !!this.enemyProto;
+          if (hasEnemy && Math.random() < 0.5) return this._spawnEnemy();
+          return this._spawnCactus();
+        };
+        const first = useBird ? this._spawnBird() : spawnGround();
         this.active.push(first);
         // Guard: avoid immediate stacking too close
         const dblChance = THREE.MathUtils.lerp(0.08, 0.22, this.difficulty);
         let didDouble = false;
         if (Math.random() < dblChance) {
-          const second = useBird && Math.random() < 0.5 ? this._spawnBird() : this._spawnCactus();
+          const second = useBird && Math.random() < 0.5 ? this._spawnBird() : spawnGround();
           // ensure second is at least 4.4 units ahead of first (fair window)
           if (second.object.position.x - first.object.position.x < 4.4) {
             second.object.position.x = first.object.position.x + 4.4 + Math.random()*1.6;
@@ -442,13 +560,24 @@ export class ObstacleManager {
           o.object.position.y = birdData.baseY + Math.sin(birdData.t * freq) * amp;
         }
 
-        // Spawn trail particles
-        if (this.particles && Math.random() < 0.5) {
-          const pos = o.object.position;
-          this.particles.spawnBirdTrail(pos.x, pos.y, pos.z, 1);
-        }
+        // Particle trail removed per user request
       }
-      o.collider.setFromObject(o.object);
+      // enemy animation / subtle bob
+      if (o.type === 'enemy' && o.object.userData?.enemy) {
+        const e = o.object.userData.enemy;
+        e.t += dt * 4;
+        if (e.mixer) { try { e.mixer.update(dt); } catch(_){} }
+        // tiny bob to sell movement if no animation present
+        const bob = Math.sin(e.t * 3.2) * 0.03;
+        o.object.position.y = bob;
+      }
+      // Fast collider update using cached size/offset
+      if (o._colSize && o._colOffset) {
+        const center = o.object.position.clone().add(o._colOffset);
+        o.collider.setFromCenterAndSize(center, o._colSize);
+      } else {
+        o.collider.setFromObject(o.object);
+      }
       if (o.object.position.x < -12) {
         this.group.remove(o.object);
         this.active.splice(i,1);
@@ -459,7 +588,12 @@ export class ObstacleManager {
       const c = this.coins[i];
       c.object.position.x += dx;
       c.object.rotation.y += dt * 4; // spin coin
-      c.collider.setFromObject(c.object);
+      if (c._colSize && c._colOffset) {
+        const center = c.object.position.clone().add(c._colOffset);
+        c.collider.setFromCenterAndSize(center, c._colSize);
+      } else {
+        c.collider.setFromObject(c.object);
+      }
       if (c.object.position.x < -12) {
         this.group.remove(c.object);
         this.coins.splice(i,1);

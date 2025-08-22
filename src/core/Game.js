@@ -11,8 +11,8 @@ import { ObstacleManager } from '../systems/ObstacleManager.js';
 import { BackgroundSystem } from '../systems/BackgroundSystem.js';
 import { SkySystem } from '../systems/SkySystem.js';
 import { WeatherSystem } from '../systems/WeatherSystem.js';
-import { PostFXSystem } from '../systems/PostFXSystem.js';
-import { ParticleSystem } from '../systems/ParticleSystem.js';
+// PostFXSystem removed for performance
+// ParticleSystem removed per user request
 
 export class Game {
   constructor({ container, onScore, onGameOver, onPause, onResume, onHighScore, onCoin }) {
@@ -75,8 +75,8 @@ export class Game {
     this.renderer.setClearColor(0x0b1220, 1);
     this.container.appendChild(this.renderer.domElement);
 
-    // Post-processing with zero vignette; start at neutral exposure (WeatherSystem drives it)
-    this.postFX = new PostFXSystem(this.renderer, { vignette: 0.0, grain: 0.0, exposure: 1.0 });
+    // Post-processing disabled for performance
+    this.postFX = null;
 
     // Lights
     const hemi = new THREE.HemisphereLight(0xffffff, 0x334455, 1.0);
@@ -306,19 +306,16 @@ export class Game {
         this.onResize();
       }
 
-      // Particles
-      this.particles = new ParticleSystem(this.scene);
       // Obstacle manager
-      this.obstacles = new ObstacleManager(this.scene, this.loader, this.sounds, this.particles);
+      this.obstacles = new ObstacleManager(this.scene, this.loader, this.sounds);
       this.obstacles.globalScale = this._entityScale;
       await this.obstacles.prepare({
         cactusUrl: '/models/cactus.glb',
         coinUrl: '/models/coin.glb',
         birdUrl: '/models/bird.glb', // optional; falls back if missing
+        enemyUrl: '/models/enemy.glb', // optional ground obstacle
       });
 
-      // Particles
-      this.particles = new ParticleSystem(this.scene);
       // Weather after background/sky/sounds/post are ready
       this.weather = new WeatherSystem({
         scene: this.scene,
@@ -329,6 +326,16 @@ export class Game {
       });
       // Apply initial weather immediately so exposure/fog/tints are set from frame 0
       this.weather.setWeather('sunny', 0.0);
+      // Initialize dynamic performance scaler state
+      this._perf = {
+        lastNow: performance.now(),
+        avgMs: 16.7,
+        samples: 0,
+        adjustTimer: 0,
+        pratio: this.renderer.getPixelRatio?.() || 1,
+        pratioMin: 0.75,
+        pratioMax: this.renderer.getPixelRatio?.() || 1.75,
+      };
       // init complete
   }
 
@@ -392,10 +399,6 @@ export class Game {
 
   jump(mult = 1) {
     this.player?.jump(mult);
-    if (this.particles && this.player.object.position.y < 0.5) {
-      const pos = this.player.object.position;
-      this.particles.spawnJumpParticles(pos.x, pos.z, 5);
-    }
   }
   setJumpHeld(held) { this.player?.setJumpHeld?.(held); }
 
@@ -499,6 +502,7 @@ export class Game {
     requestAnimationFrame(() => this.loop());
     if (this.isPaused) return;
 
+    const frameStart = performance.now();
     const dt = Math.min(0.033, this.clock.getDelta());
     this.timePlayed += dt;
 
@@ -538,12 +542,8 @@ export class Game {
       const target = new THREE.Vector3(p.x + 2.0, Math.max(2.5, p.y + 2.5), p.z + 3.0);
       this.fillLight.position.lerp(target, Math.min(1, dt * 8));
     }
-    if (!wasGrounded && this.player.isOnGround) {
-      // Spawn landing dust at player's approximate feet position
-      this.particles?.spawnLandParticles(this.player.object.position.x, this.player.object.position.z, 7);
-    }
+    // particle landing effects removed
     this.obstacles.update(dt);
-    this.particles?.update(dt);
 
     // Collision checks - immediate game over on hit
     const hit = this.obstacles.collidesWith(this.player.getCollider());
@@ -575,9 +575,7 @@ export class Game {
           this.score += scoreGained;
           this.onCoin?.(scoreGained);
           this.triggerShake(0.05, 0.1);
-          if (this.particles) {
-            for (const pos of positions) this.particles.spawnSparkleAt(pos.x, pos.y, pos.z, 8);
-          }
+          // sparkle particle effect removed
         }
         // Extend magnet on power-up coins gathered via magnet
         if (powerUpCoins > 0) this.magnetTime += powerUpCoins * 6.0;
@@ -595,11 +593,7 @@ export class Game {
       this.triggerShake(0.06, 0.12);
 
       // Spawn sparkles at each collected coin's position
-      if (this.particles && coinRes.positions?.length > 0) {
-        for (const pos of coinRes.positions) {
-          this.particles.spawnSparkleAt(pos.x, pos.y, pos.z, 8);
-        }
-      }
+      // sparkle particle effect removed
       // Extend magnet duration when power-up coins are taken normally
       if (coinRes.powerUpCoins > 0) this.magnetTime += coinRes.powerUpCoins * 6.0;
       // Increment combo counter
@@ -611,11 +605,11 @@ export class Game {
     this.onScore?.(this.score);
 
     // Footstep dust while running on ground (Chrome Dino vibe)
-    if (this.player?.isOnGround && !this.isStumbling && this.speed > 2 && this.particles) {
+    if (this.player?.isOnGround && !this.isStumbling && this.speed > 2) {
       this._stepTimer -= dt;
       if (this._stepTimer <= 0) {
         const pos = this.player.object.position;
-        this.particles.spawnDustAt(pos.x - 0.2, pos.z, 4);
+        // step dust effect removed
         // Cadence scales inversely with speed; clamp to reasonable range
         const base = 0.22; // at ~8 speed
         const period = Math.max(0.09, base * (8 / Math.max(2, this.speed)));
@@ -684,9 +678,38 @@ export class Game {
     this.weather?.update(dt, this.speed);
     // Allow sound manager to recover ducking volume
     this.sounds.update?.(dt);
-    // Render (through post-processing)
-    if (this.postFX) this.postFX.render(this.scene, this.camera);
-    else this.renderer.render(this.scene, this.camera);
+    // Render directly (post-processing disabled)
+    this.renderer.render(this.scene, this.camera);
+
+    // Dynamic performance scaler: adapt DPR and weather cost over time
+    const now = performance.now();
+    const frameMs = Math.max(1, now - frameStart);
+    // Exponential moving average to be stable across time
+    this._perf.avgMs = this._perf.samples === 0
+      ? frameMs
+      : (this._perf.avgMs * 0.9 + frameMs * 0.1);
+    this._perf.samples++;
+    this._perf.adjustTimer += dt;
+    if (this._perf.adjustTimer >= 1.2) {
+      // Target ~60fps (16.7ms). If slower, reduce DPR a bit; if faster, increase up to cap.
+      const targetMs = 16.7;
+      let pr = this._perf.pratio;
+      const capSmall = Math.min(window.devicePixelRatio || pr, (Math.min(window.innerWidth||1, window.innerHeight||1) <= 768) ? 1.25 : 1.75);
+      this._perf.pratioMax = capSmall;
+      if (this._perf.avgMs > targetMs * 1.15) {
+        pr = Math.max(this._perf.pratioMin, pr - 0.05);
+      } else if (this._perf.avgMs < targetMs * 0.85) {
+        pr = Math.min(this._perf.pratioMax, pr + 0.03);
+      }
+      if (Math.abs(pr - this._perf.pratio) > 0.005) {
+        this._perf.pratio = pr;
+        this.renderer.setPixelRatio(pr);
+        // Notify weather to scale particle counts accordingly (0..1 scale)
+        const perfScale = THREE.MathUtils.clamp((pr - this._perf.pratioMin) / (this._perf.pratioMax - this._perf.pratioMin + 1e-6), 0, 1);
+        this.weather?.setPerfScale?.(perfScale);
+      }
+      this._perf.adjustTimer = 0;
+    }
   }
 
   getDifficulty(){ return this._difficulty; }

@@ -10,6 +10,10 @@ export class WeatherSystem {
     this.sounds = sounds; // SoundManager
     this.postFX = postFX; // PostFXSystem
 
+    // Feature toggles: user requests no day-night and no fog
+    this.disableCycle = true;   // keep constant daytime lighting
+    this.disableFog = true;     // no fog in scene
+
     // Day-night state
     this.dayLength = 90; // seconds for full cycle (shorter so players notice)
     this.phase = 0; // 0..1 (0 day, 0.5 night, 1 day)
@@ -18,10 +22,12 @@ export class WeatherSystem {
     // Darker base fog color for a less washed-out scene
     this.baseFogColor = new THREE.Color(0x5b7aa3);
     this.fog = new THREE.Fog(this.baseFogColor.getHex(), 12, 90);
-    this.scene.fog = this.fog;
+    // Respect user preference: remove fog from scene
+    if (!this.disableFog) this.scene.fog = this.fog; else this.scene.fog = null;
 
     // Weather state
-    this.types = ['sunny', 'cloudy', 'rainy', 'foggy'];
+    // Exclude foggy option per user preference
+    this.types = ['sunny', 'cloudy', 'rainy'];
     this.current = 'sunny';
     this.nextIn = 8 + Math.random() * 12; // earlier first switch so rain/fog show up
 
@@ -35,7 +41,9 @@ export class WeatherSystem {
     this._dropTex = this._makeDropTex();
     this._splashTex = this._makeSplashTex();
     this.rainIntensity = 0; // 0..1
-    this.maxDrops = 650; // stronger visual presence while remaining performant
+    this._baseMaxDrops = 650; // stronger visual presence while remaining performant
+    this.maxDrops = this._baseMaxDrops;
+    this._perfScale = 1.0; // 0..1 from Game perf scaler
     this.fogDensity = 0;
 
     // Tweening state
@@ -55,35 +63,30 @@ export class WeatherSystem {
     // Smooth tweaks based on type
     switch (type) {
       case 'sunny':
-        this._tweenFog(0.002, transition);
+        if (!this.disableFog) this._tweenFog(0.002, transition);
         this._tweenRain(0.0, transition);
         this.background?.setParallaxOpacity?.(0.8, 0.6);
         break;
       case 'cloudy':
-        this._tweenFog(0.006, transition);
+        if (!this.disableFog) this._tweenFog(0.006, transition);
         this._tweenRain(0.0, transition);
         this.background?.setParallaxOpacity?.(0.9, 0.75);
         break;
       case 'rainy':
-        this._tweenFog(0.01, transition);
+        if (!this.disableFog) this._tweenFog(0.01, transition);
         this._tweenRain(0.7, transition);
         this.background?.setParallaxOpacity?.(0.75, 0.6);
-        break;
-      case 'foggy':
-        this._tweenFog(0.02, transition);
-        this._tweenRain(0.0, transition);
-        this.background?.setParallaxOpacity?.(0.6, 0.45);
         break;
     }
   }
 
   update(dt, gameSpeed = 1) {
-    // Day-night cycle
-    this.phase = (this.phase + dt / this.dayLength) % 1.0;
-    const dayFactor = this._dayLightFactor(this.phase); // 0 night..1 day
+    // Day-night cycle (disabled => constant daytime)
+    if (!this.disableCycle) this.phase = (this.phase + dt / this.dayLength) % 1.0;
+    const dayFactor = this.disableCycle ? 1.0 : this._dayLightFactor(this.phase); // 0 night..1 day
 
     // Update tweens
-    if (this.fogTween.active) {
+    if (!this.disableFog && this.fogTween.active) {
       this.fogTween.time += dt;
       const t = Math.min(1, this.fogTween.time / this.fogTween.duration);
       this.fogDensity = THREE.MathUtils.lerp(this.fogTween.start, this.fogTween.end, t);
@@ -97,30 +100,36 @@ export class WeatherSystem {
         if (t >= 1) this.rainTween.active = false;
     }
 
-    // Adjust exposure (post) for perceived brightness across cycle
+    // Adjust exposure (post). With cycle disabled, hold a stable day exposure.
     if (this.postFX?.material?.uniforms?.exposure) {
-      const target = THREE.MathUtils.lerp(this.nightExposure, this.dayExposure, dayFactor);
+      const target = this.disableCycle
+        ? this.dayExposure
+        : THREE.MathUtils.lerp(this.nightExposure, this.dayExposure, dayFactor);
       const cur = this.postFX.material.uniforms.exposure.value || target;
       this.postFX.material.uniforms.exposure.value = cur + (target - cur) * Math.min(1, dt * 1.5);
     }
 
-    // Sky stars visibility
-    this.sky?.setDayNightFactor?.(1 - dayFactor);
+    // Sky stars visibility (no stars when cycle disabled)
+    this.sky?.setDayNightFactor?.(this.disableCycle ? 0 : (1 - dayFactor));
 
-    // Fog color blend: day sky to deep night blue
+    // Tint background plane to match cycle (or stay as daytime if disabled)
     const nightCol = new THREE.Color(0x0b1830);
-    this.fog.color.copy(nightCol).lerp(this.baseFogColor, dayFactor);
-    // Also tint background plane to match cycle
+    if (!this.disableFog) {
+      this.fog.color.copy(nightCol).lerp(this.baseFogColor, dayFactor);
+    }
+    // Also tint background plane
     const daySky = new THREE.Color(0x8bb3e0);
     const nightSky = new THREE.Color(0x0b1830);
     const tint = nightSky.clone().lerp(daySky, dayFactor);
     this.background?.setSkyTint?.(tint);
     
-    // Fog distances scale with weather
-    const nearTarget = THREE.MathUtils.lerp(6, 16, 1 - Math.min(1, this.fogDensity * 40));
-    const farTarget = THREE.MathUtils.lerp(40, 110, 1 - Math.min(1, this.fogDensity * 40));
-    this.fog.near += (nearTarget - this.fog.near) * 0.1;
-    this.fog.far += (farTarget - this.fog.far) * 0.1;
+    // Fog distances scale with weather (skip entirely if fog disabled)
+    if (!this.disableFog) {
+      const nearTarget = THREE.MathUtils.lerp(6, 16, 1 - Math.min(1, this.fogDensity * 40));
+      const farTarget = THREE.MathUtils.lerp(40, 110, 1 - Math.min(1, this.fogDensity * 40));
+      this.fog.near += (nearTarget - this.fog.near) * 0.1;
+      this.fog.far += (farTarget - this.fog.far) * 0.1;
+    }
 
 
     // Randomized weather transitions

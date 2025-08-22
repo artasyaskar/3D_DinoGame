@@ -26,6 +26,8 @@ export class SkySystem {
     this.cloudSpeedFar = 0.002; // uv units per second
     this.cloudSpeedNear = 0.004;
     this.enabled = true;
+    // Clouds are visually perceived as haze; keep them disabled by default for a crisp, fog-free look
+    this.cloudsEnabled = false;
   }
 
   init() {
@@ -41,6 +43,9 @@ export class SkySystem {
     this.cloudFar.renderOrder = -2.5; // behind parallax layers
     this.cloudNear.renderOrder = -1.5;
     this.group.add(this.cloudFar, this.cloudNear);
+    // Turn off clouds by default
+    this.cloudFar.visible = false;
+    this.cloudNear.visible = false;
 
     // Try load textures; fall back to soft alpha gradient clouds
     this._loadCloud('/textures/environment/clouds_far.png', this.cloudFar, '_cloudTex1', 2);
@@ -103,11 +108,19 @@ export class SkySystem {
 
   update(dt, speed = 1.0) {
     if (!this.enabled) return;
-    if (this._cloudTex1) this._cloudTex1.offset.x -= dt * this.cloudSpeedFar * (0.5 + speed * 0.05);
-    if (this._cloudTex2) this._cloudTex2.offset.x -= dt * this.cloudSpeedNear * (0.5 + speed * 0.05);
+    if (this.cloudsEnabled) {
+      if (this._cloudTex1) this._cloudTex1.offset.x -= dt * this.cloudSpeedFar * (0.5 + speed * 0.05);
+      if (this._cloudTex2) this._cloudTex2.offset.x -= dt * this.cloudSpeedNear * (0.5 + speed * 0.05);
+    }
   }
 
   setVisible(v) { this.group.visible = v; }
+
+  setCloudsEnabled(v) {
+    this.cloudsEnabled = !!v;
+    if (this.cloudFar) this.cloudFar.visible = this.cloudsEnabled;
+    if (this.cloudNear) this.cloudNear.visible = this.cloudsEnabled;
+  }
 
   dispose() { this.group.removeFromParent(); }
 }
