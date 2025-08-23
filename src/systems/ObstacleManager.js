@@ -645,10 +645,47 @@ export class ObstacleManager {
     const zTol = (this.zSpread ?? 0) + 0.2; // small extra margin
     pb.min.z -= zTol;
     pb.max.z += zTol;
-    // Make obstacle hit detection slightly more sensitive in XY as well
-    pb.expandByScalar(0.10);
+    
     for (const o of this.active) {
-      if (o.collider.intersectsBox(pb)) return o; // return the first colliding obstacle
+      // For birds, we need to adjust the collision detection to account for their flying height
+      if (o.type === 'bird') {
+        // Create a copy of the player's hitbox for this check
+        const playerHitbox = playerBox.clone();
+        
+        // Slightly expand the player's hitbox for birds to make it more forgiving
+        playerHitbox.expandByScalar(0.15);
+        
+        // Get the bird's world position and adjust its collision box
+        const birdPos = o.object.position.clone();
+        const birdSize = o._colSize ? o._colSize.clone() : new THREE.Vector3(1, 1, 1);
+        
+        // Create a more accurate collision box for the bird
+        const birdBox = new THREE.Box3(
+          new THREE.Vector3(
+            birdPos.x - birdSize.x * 0.5,
+            birdPos.y - birdSize.y * 0.5,
+            birdPos.z - birdSize.z * 0.5
+          ),
+          new THREE.Vector3(
+            birdPos.x + birdSize.x * 0.5,
+            birdPos.y + birdSize.y * 0.5,
+            birdPos.z + birdSize.z * 0.5
+          )
+        );
+        
+        // Check collision with the player
+        if (playerHitbox.intersectsBox(birdBox)) {
+          return o;
+        }
+      } else {
+        // For ground obstacles, use the standard collision detection
+        // Make obstacle hit detection slightly more sensitive in XY as well
+        const pbCopy = pb.clone();
+        pbCopy.expandByScalar(0.10);
+        if (o.collider.intersectsBox(pbCopy)) {
+          return o;
+        }
+      }
     }
     return null;
   }
