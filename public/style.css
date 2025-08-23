@@ -24,11 +24,18 @@
 /* Fixed top-center controls (prevents layout shift when HUD content changes) */
 .top-center-controls {
   position: absolute;
-  top: max(16px, env(safe-area-inset-top));
+  /* Push slightly below the HUD so it never covers the difficulty bar */
+  top: calc(max(16px, env(safe-area-inset-top)) + 48px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 20; /* above HUD */
   pointer-events: none; /* pass through by default */
+}
+.top-center-controls > * { pointer-events: auto; }
+
+/* On very small phones, nudge a bit less to preserve vertical space */
+@media (max-width: 480px) {
+  .top-center-controls { top: calc(max(12px, env(safe-area-inset-top)) + 42px); }
 }
 .top-center-controls > * { pointer-events: auto; }
 
