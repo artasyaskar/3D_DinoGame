@@ -399,7 +399,12 @@ resumeBtn.addEventListener('click', () => {
   game.resume();
 });
 
-muteBtn.addEventListener('click', async () => {
+// Prevent mute tap from bubbling to container (which could register as a jump on some devices)
+muteBtn.addEventListener('touchstart', (e) => {
+  e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+}, { passive: false });
+muteBtn.addEventListener('click', async (e) => {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
   // Ensure game exists so we don't call on undefined
   if (!game) {
     await init();

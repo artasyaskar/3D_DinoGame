@@ -21,6 +21,17 @@
   --inner-1: inset 0 0 0 1px rgba(255,255,255,0.06);
 }
 
+/* Fixed top-center controls (prevents layout shift when HUD content changes) */
+.top-center-controls {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20; /* above HUD */
+  pointer-events: none; /* pass through by default */
+}
+.top-center-controls > * { pointer-events: auto; }
+
 html, body {
   height: 100%;
 }
