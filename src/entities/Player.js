@@ -6,6 +6,7 @@ export class Player {
     this.loader = assetLoader;
     this.sounds = sounds;
     this.particles = particles;
+    this._colliderScale = 1.0; // Scale factor for collider size (1.0 = exact fit)
 
     this.object = new THREE.Group();
     this.object.position.set(-5, 0, 0); // place on left side like Chrome Dino
@@ -38,6 +39,7 @@ export class Player {
     // Collider
     this.collider = new THREE.Box3();
     this.colliderHelper = null; // for debug if needed
+    this._colliderOffset = new THREE.Vector3(0, 0, 0); // Fine-tune collider position
 
     // Shadow receiver/caster toggle later
     this._shadowMesh = null;
@@ -340,12 +342,21 @@ export class Player {
 
   _recalcCollider() {
     this.collider.setFromObject(this.object);
-    // Tighten collider slightly for fairness
-    const min = this.collider.min.clone();
-    const max = this.collider.max.clone();
-    const inset = 0.05 * (max.x - min.x);
-    this.collider.min.set(min.x + inset, min.y, min.z + inset);
-    this.collider.max.set(max.x - inset, max.y, max.z - inset);
+    
+    // Get current collider size and center
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    this.collider.getSize(size);
+    this.collider.getCenter(center);
+    
+    // Apply custom scaling to make the collider more accurate for the dino
+    const scaledSize = size.clone().multiplyScalar(this._colliderScale);
+    
+    // Apply offset to position the collider better (e.g., move it slightly forward/back)
+    center.add(this._colliderOffset);
+    
+    // Set new collider bounds with adjusted size and position
+    this.collider.setFromCenterAndSize(center, scaledSize);
   }
 
   getCollider() {
