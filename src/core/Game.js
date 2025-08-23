@@ -169,6 +169,11 @@ export class Game {
     this._shakeAmp = 0;
     this._shakePhase = Math.random() * Math.PI * 2;
 
+    // Optional performance helpers (default off to avoid visual changes)
+    this._lowPower = false; // when true, clamp DPR lower and reduce effect cost
+    this._fpsEl = null;     // on-demand FPS overlay element
+    this._fpsAvg = 60;      // EMA fps for stable readout
+
     // Post-resize auto-fit frames to ensure proper vertical fit on mobile
     this._fitFramesRemaining = 0;
 
@@ -229,6 +234,12 @@ export class Game {
         // Force-spawn a bird for testing visibility
         this.obstacles?.spawnBirdPublic?.();
         console.log('[Spawn] bird');
+      } else if (key === 'f') {
+        // Toggle FPS overlay (no effect on gameplay)
+        this.toggleFpsOverlay();
+      } else if (key === 'l') {
+        // Toggle Low-power mode to mitigate lag on weaker/thermal-limited devices
+        this.toggleLowPower();
       }
     });
   }
@@ -472,7 +483,7 @@ export class Game {
     }
     // Update DPR on resize to handle zoom/orientation changes
     const isSmallScreen = Math.min(window.innerWidth || w, window.innerHeight || h) <= 768;
-    const dprCap = isSmallScreen ? 1.25 : 1.75;
+    const dprCap = this._lowPower ? 1.0 : (isSmallScreen ? 1.25 : 1.75);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
     this.renderer.setSize(w, h);
     this.postFX?.onResize(w, h);
@@ -690,11 +701,20 @@ export class Game {
       : (this._perf.avgMs * 0.9 + frameMs * 0.1);
     this._perf.samples++;
     this._perf.adjustTimer += dt;
+
+    // Update FPS overlay if enabled (no gameplay side-effects)
+    if (this._fpsEl) {
+      const fps = 1000 / Math.max(1, this._perf.avgMs);
+      // Smooth a bit more for readability
+      this._fpsAvg = this._fpsAvg * 0.85 + fps * 0.15;
+      this._fpsEl.textContent = Math.round(this._fpsAvg) + ' FPS';
+    }
     if (this._perf.adjustTimer >= 1.2) {
       // Target ~60fps (16.7ms). If slower, reduce DPR a bit; if faster, increase up to cap.
       const targetMs = 16.7;
       let pr = this._perf.pratio;
-      const capSmall = Math.min(window.devicePixelRatio || pr, (Math.min(window.innerWidth||1, window.innerHeight||1) <= 768) ? 1.25 : 1.75);
+      const capSmallBase = (Math.min(window.innerWidth||1, window.innerHeight||1) <= 768) ? 1.25 : 1.75;
+      const capSmall = this._lowPower ? 1.0 : Math.min(window.devicePixelRatio || pr, capSmallBase);
       this._perf.pratioMax = capSmall;
       if (this._perf.avgMs > targetMs * 1.15) {
         pr = Math.max(this._perf.pratioMin, pr - 0.05);
@@ -705,11 +725,53 @@ export class Game {
         this._perf.pratio = pr;
         this.renderer.setPixelRatio(pr);
         // Notify weather to scale particle counts accordingly (0..1 scale)
-        const perfScale = THREE.MathUtils.clamp((pr - this._perf.pratioMin) / (this._perf.pratioMax - this._perf.pratioMin + 1e-6), 0, 1);
+        let perfScale = THREE.MathUtils.clamp((pr - this._perf.pratioMin) / (this._perf.pratioMax - this._perf.pratioMin + 1e-6), 0, 1);
+        if (this._lowPower) perfScale *= 0.7; // modest extra reduction in low-power mode
         this.weather?.setPerfScale?.(perfScale);
       }
       this._perf.adjustTimer = 0;
     }
+  }
+
+  // --- Optional helpers (off by default) ---
+  toggleFpsOverlay() {
+    if (this._fpsEl) {
+      this._fpsEl.remove();
+      this._fpsEl = null;
+      return;
+    }
+    const el = document.createElement('div');
+    el.textContent = '60 FPS';
+    el.style.cssText = [
+      'position:fixed',
+      'top:8px',
+      'right:10px',
+      'z-index:50',
+      'padding:2px 6px',
+      'font:600 12px/16px system-ui,Segoe UI,Roboto,Arial',
+      'color:#e2e8f0',
+      'background:rgba(2,6,23,0.5)',
+      'border-radius:6px',
+      'backdrop-filter:saturate(1.1) blur(4px)',
+      'pointer-events:none'
+    ].join(';');
+    document.body.appendChild(el);
+    this._fpsEl = el;
+  }
+
+  toggleLowPower() { this.setLowPower(!this._lowPower); }
+  setLowPower(on) {
+    this._lowPower = !!on;
+    // Clamp current DPR immediately within low-power caps
+    const small = Math.min(window.innerWidth||1, window.innerHeight||1) <= 768;
+    const cap = this._lowPower ? 1.0 : (small ? 1.25 : 1.75);
+    const pr = Math.min(this.renderer.getPixelRatio?.() || 1, cap);
+    this._perf.pratioMax = cap;
+    this.renderer.setPixelRatio(pr);
+    // Inform weather to reduce effect budgets subtly when low-power
+    const perfScale = this._lowPower ? 0.6 : 1.0;
+    this.weather?.setPerfScale?.(perfScale);
+    console.log('[Perf] Low-power mode =', this._lowPower);
   }
 
   getDifficulty(){ return this._difficulty; }

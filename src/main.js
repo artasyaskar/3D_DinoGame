@@ -413,23 +413,27 @@ resumeBtn.addEventListener('click', () => {
 });
 
 // Prevent mute tap from bubbling to container (which could register as a jump on some devices)
-muteBtn.addEventListener('touchstart', (e) => {
-  e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-}, { passive: false });
-muteBtn.addEventListener('click', async (e) => {
-  if (e) { e.preventDefault(); e.stopPropagation(); }
+const doToggleMute = () => {
   let newMuted;
   if (game && game.toggleMute) {
     newMuted = game.toggleMute();
   } else {
-    // Game not ready yet: flip desired state and update UI instantly
     _desiredMuted = !(_desiredMuted ?? false);
     newMuted = _desiredMuted;
   }
-  // Update label immediately
   if (typeof newMuted === 'boolean') {
     muteBtn.textContent = newMuted ? 'Unmute' : 'Mute';
   }
+};
+
+muteBtn.addEventListener('touchstart', (e) => {
+  e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+  // Perform toggle immediately on touchstart for mobile devices
+  doToggleMute();
+}, { passive: false });
+muteBtn.addEventListener('click', async (e) => {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  doToggleMute();
 });
 
 // Close button for share menu

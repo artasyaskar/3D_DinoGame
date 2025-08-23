@@ -70,7 +70,9 @@ export class ObstacleManager {
 
     // Spawn position and lane; face toward player (left)
     wrapper.position.set(15 + Math.random()*9, 0, (Math.random()*2-1)*this.zSpread);
-    wrapper.rotation.y = Math.PI;
+    // Apply yaw on the model so its front points to the player (left)
+    // Many GLBs use +Z as forward; our side view wants left-facing along -X.
+    primary.rotation.y += Math.PI;
 
     // Setup walk/run animation if available; otherwise slight body bob
     wrapper.userData = wrapper.userData || {};

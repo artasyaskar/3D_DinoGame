@@ -14,6 +14,8 @@ export class Player {
     this.mixer = null;
     this.actions = {};
     this.currentAction = null;
+    this._hasJumpAnim = false; // whether a proper jump clip exists
+    this._airbornePause = false; // when true, pause run/walk while in air
 
     // Movement
     this.velY = 0;
@@ -157,6 +159,8 @@ export class Player {
       this._play(runAction, 0.25);
       // Apply current move-speed to mixer timeScale so dino visibly speeds up with game
       this._applyMixerSpeed();
+      // Detect whether a proper jump animation exists
+      this._hasJumpAnim = !!this._findAction(['jump']);
     }
 
     this._recalcCollider();
@@ -171,6 +175,8 @@ export class Player {
 
   _applyMixerSpeed() {
     if (!this.mixer) return;
+    // If we're intentionally pausing animation mid-air, keep mixer halted
+    if (this._airbornePause) { this.mixer.timeScale = 0; return; }
     // Map 6..12 game speed to ~1.0..1.7 animation speed; clamp to safe range
     const animSpeed = THREE.MathUtils.clamp(
       THREE.MathUtils.mapLinear(this._moveSpeed ?? 6, 6, 12, 1.0, 1.7),
@@ -218,8 +224,8 @@ export class Player {
       this.isOnGround = false;
       this.coyoteTimer = 0;
       this.sounds.playJump();
-      const jumpAct = this._findAction(['jump']);
-      if (jumpAct) this._play(jumpAct, 0.08);
+      // Freeze current running pose mid-air: do NOT switch to jump clip
+      if (this.mixer) { this._airbornePause = true; this.mixer.timeScale = 0; }
     } else {
       // Otherwise, buffer the jump to execute at next opportunity
       this.jumpBuffered = true;
@@ -286,6 +292,11 @@ export class Player {
         // Return to run/walk/idle
         const act = this._findAction(['run', 'walk', 'idle']) || this._firstAction();
         this._play(act, 0.15);
+        // Resume run speed if we paused during airborne
+        if (this._airbornePause) {
+          this._airbornePause = false;
+          this._applyMixerSpeed();
+        }
       }
     }
     // Detect leaving ground to start coyote window
@@ -293,6 +304,19 @@ export class Player {
       this.coyoteTimer = this.coyoteTimeMax;
     }
     this._wasGrounded = this.isOnGround;
+
+    // Robust enforcement: pause in air, resume on ground
+    if (this.mixer) {
+      if (!this.isOnGround) {
+        this.mixer.timeScale = 0; // freeze feet while airborne
+      } else {
+        // If something left the mixer paused, resume to the proper speed
+        if (this.mixer.timeScale === 0) {
+          this._airbornePause = false;
+          this._applyMixerSpeed();
+        }
+      }
+    }
 
     // Execute buffered jump if eligible
     if (this.jumpBuffered && (this.isOnGround || this.coyoteTimer > 0)) {
@@ -302,26 +326,8 @@ export class Player {
       this.velY = this.jumpStrength * this._jumpMul * mul;
       this.isOnGround = false;
       this.sounds.playJump();
-      const jumpAct = this._findAction(['jump']);
-      if (jumpAct) this._play(jumpAct, 0.1);
-    }
-
-    // Crouch transform
-    const model = this.object.children[0];
-    if (model) {
-        const targetScaleY = this.ducking ? 0.6 : 1.0;
-        const currentScaleY = model.scale.y / this._baseModelScale.y;
-        const newScaleY = currentScaleY + (targetScaleY - currentScaleY) * (dt * 20);
-        model.scale.y = this._baseModelScale.y * newScaleY;
-    }
-
-    // Shadow reacts to height: higher jump -> smaller and lighter shadow
-    if (this._shadowMesh) {
-      const h = Math.max(0, this.object.position.y);
-      const k = 1 / (1 + h * 1.2); // shrink with height
-      this._shadowMesh.scale.set(this._shadowBaseScale.x * k, this._shadowBaseScale.y * k, 1);
-      const mat = this._shadowMesh.material;
-      mat.opacity = 0.45 * k + 0.15; // fade when higher
+      // Freeze current running pose mid-air for buffered jumps as well
+      if (this.mixer) { this._airbornePause = true; this.mixer.timeScale = 0; }
     }
 
     // Always look forward
