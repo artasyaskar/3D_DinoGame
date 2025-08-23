@@ -154,7 +154,9 @@ export class ObstacleManager {
 
   _makeCoinFallback() {
     const geo = new THREE.CylinderGeometry(0.25, 0.25, 0.06, 20);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffd34d });
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+    // Prevent renderer tone mapping from washing out the color
+    mat.toneMapped = false;
     const mesh = new THREE.Mesh(geo, mat);
     // Face the camera in side view so coins aren't edge-on slivers
     mesh.rotation.x = Math.PI / 2;
@@ -418,9 +420,10 @@ export class ObstacleManager {
       coin.scale.setScalar(1.5); // Make it bigger
       // Ensure golden color regardless of node structure
       if (coin.material && coin.material.color) {
+        if (coin.material.toneMapped !== undefined) coin.material.toneMapped = false;
         coin.material.color.set(0xffd700);
       } else if (coin.traverse) {
-        coin.traverse((n)=>{ if (n.isMesh && n.material && n.material.color) n.material.color.set(0xffd700); });
+        coin.traverse((n)=>{ if (n.isMesh && n.material && n.material.color) { if (n.material.toneMapped !== undefined) n.material.toneMapped = false; n.material.color.set(0xffd700); } });
       }
   
       const wrap = new THREE.Group();
@@ -446,6 +449,13 @@ export class ObstacleManager {
     const baseY = 0.12 + Math.random() * 0.22; // ~0.12..0.34
     for (let i = 0; i < count; i++) {
       const coin = (this.coinProto ? this.coinProto.clone(true) : this._makeCoinFallback());
+      // Ensure golden color regardless of node structure/material cloning
+      if (coin.material && coin.material.color) {
+        if (coin.material.toneMapped !== undefined) coin.material.toneMapped = false;
+        coin.material.color.set(0xffd700);
+      } else if (coin.traverse) {
+        coin.traverse((n)=>{ if (n.isMesh && n.material && n.material.color) { if (n.material.toneMapped !== undefined) n.material.toneMapped = false; n.material.color.set(0xffd700); } });
+      }
       const wrap = new THREE.Group();
       wrap.add(coin);
   
