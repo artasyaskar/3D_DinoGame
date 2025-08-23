@@ -156,16 +156,19 @@ export class ObstacleManager {
     const geo = new THREE.CylinderGeometry(0.25, 0.25, 0.06, 20);
     const mat = new THREE.MeshBasicMaterial({ color: 0xffd34d });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.rotation.z = Math.PI / 2;
+    // Face the camera in side view so coins aren't edge-on slivers
+    mesh.rotation.x = Math.PI / 2;
     mesh.castShadow = false; mesh.receiveShadow = false;
     return mesh;
   }
 
   async prepare({ cactusUrl, coinUrl, birdUrl, enemyUrl }) {
     const cactusGltf = await this.loader.loadGLB(cactusUrl);
-    const coinGltf = await this.loader.loadGLB(coinUrl);
+    // NOTE: Intentionally avoid using the GLB coin model to prevent
+    // unintended large planes/strips from materials in some assets.
+    // We will use the built-in fallback coin geometry instead.
     this.cactusProto = cactusGltf.scene;
-    this.coinProto = coinGltf.scene;
+    this.coinProto = this._makeCoinFallback();
     // Try load bird model (optional)
     if (birdUrl) {
       try {
@@ -404,7 +407,8 @@ export class ObstacleManager {
 
   _spawnCoinLine() {
     const baseX = 12 + Math.random() * 8;
-    const z = (Math.random() * 2 - 1) * this.zSpread;
+    // Keep coins on the center lane so walking through them collects reliably
+    const z = 0;
     const created = [];
     const d = this.difficulty;
   
@@ -412,13 +416,18 @@ export class ObstacleManager {
     if (Math.random() < 0.1) {
       const coin = (this.coinProto ? this.coinProto.clone(true) : this._makeCoinFallback());
       coin.scale.setScalar(1.5); // Make it bigger
-      const mat = coin.children[0]?.material;
-      if (mat) mat.color.set(0xffd700); // Make it gold
+      // Ensure golden color regardless of node structure
+      if (coin.material && coin.material.color) {
+        coin.material.color.set(0xffd700);
+      } else if (coin.traverse) {
+        coin.traverse((n)=>{ if (n.isMesh && n.material && n.material.color) n.material.color.set(0xffd700); });
+      }
   
       const wrap = new THREE.Group();
       wrap.add(coin);
   
-      const baseY = 1.2 + Math.random() * 1.4;
+      // Lower power-up coin height so it's reachable while running or with a small hop
+      const baseY = 0.22 + Math.random() * 0.28; // ~0.22..0.50
       wrap.position.set(baseX, baseY, z);
       this.group.add(wrap);
       const entry = this._buildEntry(wrap, 'coin');
@@ -433,7 +442,8 @@ export class ObstacleManager {
     else if (d > 0.35) pattern = Math.random() < 0.5 ? "stair" : "line";
   
     const count = 4 + Math.floor(Math.random() * 3); // 4-6 coins
-    const baseY = 1.2 + Math.random() * 1.4;
+    // Lower default coin line height for easy walking pickup
+    const baseY = 0.12 + Math.random() * 0.22; // ~0.12..0.34
     for (let i = 0; i < count; i++) {
       const coin = (this.coinProto ? this.coinProto.clone(true) : this._makeCoinFallback());
       const wrap = new THREE.Group();
@@ -448,11 +458,11 @@ export class ObstacleManager {
   
       let y = baseY;
       if (pattern === "stair") {
-        y = baseY + i * 0.35; // staircase up
+        y = baseY + i * 0.14; // very gentle staircase
       } else if (pattern === "arc") {
         const t = (i / Math.max(1, count - 1));
         const mid = 0.5 - Math.abs(t - 0.5);
-        y = baseY + mid * 1.1; // arc peak middle
+        y = baseY + mid * 0.28; // very low arc peak
       }
       coin.position.y += y + (size.y / 2) - center.y;
   
@@ -574,7 +584,16 @@ export class ObstacleManager {
       // Fast collider update using cached size/offset
       if (o._colSize && o._colOffset) {
         const center = o.object.position.clone().add(o._colOffset);
-        o.collider.setFromCenterAndSize(center, o._colSize);
+        // Slightly pad bird colliders to make side brushes count as hits
+        if (o.type === 'bird') {
+          const sz = o._colSize.clone();
+          sz.x += 0.20; // width
+          sz.y += 0.18; // height
+          sz.z += 0.20; // depth
+          o.collider.setFromCenterAndSize(center, sz);
+        } else {
+          o.collider.setFromCenterAndSize(center, o._colSize);
+        }
       } else {
         o.collider.setFromObject(o.object);
       }
@@ -587,12 +606,18 @@ export class ObstacleManager {
     for (let i = this.coins.length-1; i>=0; i--) {
       const c = this.coins[i];
       c.object.position.x += dx;
-      c.object.rotation.y += dt * 4; // spin coin
+      // Spin only the inner mesh so the wrapper (and its cached collider) stays axis-aligned
+      const inner = c.object.children && c.object.children[0];
+      if (inner && inner.rotation) inner.rotation.y += dt * 4; else c.object.rotation.y += dt * 4;
       if (c._colSize && c._colOffset) {
         const center = c.object.position.clone().add(c._colOffset);
-        c.collider.setFromCenterAndSize(center, c._colSize);
+        // Slightly inflate coin collider to ease collection during run
+        const sz = c._colSize.clone();
+        sz.x += 0.18; sz.y += 0.18; sz.z += 0.22;
+        c.collider.setFromCenterAndSize(center, sz);
       } else {
         c.collider.setFromObject(c.object);
+        c.collider.expandByScalar(0.12);
       }
       if (c.object.position.x < -12) {
         this.group.remove(c.object);
@@ -608,6 +633,8 @@ export class ObstacleManager {
     const zTol = (this.zSpread ?? 0) + 0.2; // small extra margin
     pb.min.z -= zTol;
     pb.max.z += zTol;
+    // Make obstacle hit detection slightly more sensitive in XY as well
+    pb.expandByScalar(0.10);
     for (const o of this.active) {
       if (o.collider.intersectsBox(pb)) return o; // return the first colliding obstacle
     }
@@ -624,12 +651,36 @@ export class ObstacleManager {
   }
 
   collectCoins(playerBox) {
+    // Expand player's collider along Z like obstacle checks so near-lane coins count
+    const pb = playerBox.clone();
+    const zTol = (this.zSpread ?? 0) + 0.2;
+    pb.min.z -= zTol;
+    pb.max.z += zTol;
+    // Make coin pickup a bit forgiving in XY as well
+    pb.expandByScalar(0.18);
+
     let regularCoins = 0;
     let powerUpCoins = 0;
     const positions = [];
+    // Player center used for proximity-based pickup
+    const pCenter = pb.getCenter(new THREE.Vector3());
     for (let i = this.coins.length - 1; i >= 0; i--) {
       const c = this.coins[i];
-      if (c.collider.intersectsBox(playerBox)) {
+      // Coins are thin; use an expanded box to make pickup easy while walking
+      const coinBox = c.collider.clone();
+      coinBox.expandByScalar(0.35);
+      // Either AABB intersects or player is within a small proximity radius
+      let hit = coinBox.intersectsBox(pb);
+      if (!hit) {
+        const cPos = c.object.getWorldPosition(new THREE.Vector3());
+        const dx = Math.abs(cPos.x - pCenter.x);
+        const dy = Math.abs(cPos.y - pCenter.y);
+        const dz = Math.abs(cPos.z - pCenter.z);
+        const horiz = Math.hypot(dx, dz);
+        // Generous thresholds tuned for side-view running feel
+        if (horiz < 0.55 && dy < 0.6) hit = true;
+      }
+      if (hit) {
         const p = new THREE.Vector3();
         c.object.getWorldPosition(p);
         positions.push(p.clone());

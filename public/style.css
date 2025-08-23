@@ -439,6 +439,38 @@ button:focus-visible, .owner-badge:focus-visible, .hud:focus-visible {
 /* Helpers button as pill */
 #helpers-btn { border-radius: 999px; padding-inline: 18px; }
 
+/* Compact icon button (used for mobile pause/resume) */
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+}
+#mobile-pause-btn {
+  position: relative;
+  min-width: 38px;
+}
+#mobile-pause-btn::before {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 18px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.35));
+}
+/* Show pause (two bars) icon when game is running */
+#mobile-pause-btn[data-state="pause"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'%3E%3Cpath d='M6 4h4v16H6zM14 4h4v16h-4z'/%3E%3C/svg%3E");
+}
+/* Show play (triangle) icon when paused */
+#mobile-pause-btn[data-state="resume"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'%3E%3Cpath d='M8 5v14l11-7z'/%3E%3C/svg%3E");
+}
+
 /* Responsive tweaks */
 @media (max-width: 720px) {
   .hud { gap: 10px; padding: 8px 10px; border-radius: 12px; }

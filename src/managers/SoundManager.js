@@ -12,6 +12,7 @@ export class SoundManager {
     this._bgmBaseVol = 0.5;
     this._duckTimer = 0;
     this._duckDur = 0;
+    this._all = []; // flat list of all audio elements
   }
 
   async init(paths) {
@@ -32,6 +33,7 @@ export class SoundManager {
 
     // Attempt to load; errors are non-fatal
     const audios = [this.bgm, this.sfx.jump, this.sfx.hit, this.sfx.coin, this.sfx.rain].filter(Boolean);
+    this._all = audios;
     await Promise.all(audios.map(a => new Promise((resolve) => {
       a.addEventListener('canplaythrough', () => resolve(), { once: true });
       a.addEventListener('error', () => resolve(), { once: true });
@@ -66,15 +68,14 @@ export class SoundManager {
 
   toggleMute() {
     this.muted = !this.muted;
+    // Instant mute via element.muted (no fade)
+    for (const a of this._all) { try { a.muted = this.muted; } catch {} }
     if (this.muted) {
-      // Pause everything immediately
+      // Also pause BGM/rain to save CPU/battery
       this.bgm?.pause();
       this.sfx.rain?.pause();
-      this.sfx.jump?.pause?.();
-      this.sfx.hit?.pause?.();
-      this.sfx.coin?.pause?.();
     } else {
-      // Resume ambient loops only if appropriate; SFX will play on next events
+      // Resume loops immediately after unmute
       this.playBgm();
       if (this.sfx.rain && this.sfx.rain.volume > 0.001) {
         this.sfx.rain.play().catch(()=>{});
@@ -98,15 +99,18 @@ export class SoundManager {
 
   update(dt) {
     if (!this.bgm) return;
-    if (this._duckTimer < this._duckDur) {
-      this._duckTimer += dt;
-      // Ease volume back to base
-      const t = Math.min(1, this._duckTimer / this._duckDur);
-      const eased = 1 - Math.pow(1 - t, 2);
-      const target = this._bgmBaseVol;
-      this.bgm.volume = this.bgm.volume + (target - this.bgm.volume) * Math.max(0.2, eased);
-    } else {
-      this.bgm.volume = this._bgmBaseVol;
+    // Skip any volume animations while muted to avoid delayed perception
+    if (!this.muted) {
+      if (this._duckTimer < this._duckDur) {
+        this._duckTimer += dt;
+        // Ease volume back to base
+        const t = Math.min(1, this._duckTimer / this._duckDur);
+        const eased = 1 - Math.pow(1 - t, 2);
+        const target = this._bgmBaseVol;
+        this.bgm.volume = this.bgm.volume + (target - this.bgm.volume) * Math.max(0.2, eased);
+      } else {
+        this.bgm.volume = this._bgmBaseVol;
+      }
     }
 
     // keep rain playing if needed

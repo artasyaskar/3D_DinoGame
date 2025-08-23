@@ -6,6 +6,7 @@ const restartBtn = document.getElementById('restart-btn');
 const resumeBtn = document.getElementById('resume-btn');
 const shareBtn = document.getElementById('share-btn');
 const muteBtn = document.getElementById('mute-btn');
+const mobilePauseBtn = document.getElementById('mobile-pause-btn');
 const startScreen = document.getElementById('start-screen');
 const loadingScreen = document.getElementById('loading-screen');
 const gameoverScreen = document.getElementById('gameover-screen');
@@ -110,8 +111,22 @@ async function init() {
       showOverlay(gameoverScreen);
       flash(0.35, 220);
     },
-    onPause: () => { showOverlay(pauseScreen); },
-    onResume: () => { hideOverlay(pauseScreen); },
+    onPause: () => {
+      showOverlay(pauseScreen);
+      if (mobilePauseBtn) {
+        mobilePauseBtn.dataset.state = 'resume';
+        mobilePauseBtn.setAttribute('aria-label', 'Resume');
+        mobilePauseBtn.setAttribute('title', 'Resume');
+      }
+    },
+    onResume: () => {
+      hideOverlay(pauseScreen);
+      if (mobilePauseBtn) {
+        mobilePauseBtn.dataset.state = 'pause';
+        mobilePauseBtn.setAttribute('aria-label', 'Pause');
+        mobilePauseBtn.setAttribute('title', 'Pause');
+      }
+    },
     onHighScore: (hs) => { highScoreEls.forEach(el => el && (el.textContent = String(hs))); },
     onCoin: (points) => {
       // Create a floating "+points" near the score HUD
@@ -134,6 +149,25 @@ async function init() {
   await game.init();
   // Ensure initial size is correct
   game.onResize();
+
+  // Show mobile pause button on touch devices
+  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  if (mobilePauseBtn) {
+    if (isTouch) {
+      mobilePauseBtn.style.display = 'inline-grid';
+      // initial state: if game not running yet, show pause icon; will update on start
+      mobilePauseBtn.dataset.state = 'pause';
+      mobilePauseBtn.setAttribute('aria-label', 'Pause');
+      mobilePauseBtn.setAttribute('title', 'Pause');
+      mobilePauseBtn.addEventListener('click', () => {
+        if (!game) return;
+        if (!game.isRunning) return; // ignore when not running
+        if (game.isPaused) game.resume(); else game.pause();
+      });
+    } else {
+      mobilePauseBtn.style.display = 'none';
+    }
+  }
 
   window.addEventListener('resize', () => game.onResize());
   // Also observe container size changes (mobile browser UI collapsing/expanding)
@@ -284,6 +318,12 @@ startBtn.addEventListener('click', async () => {
     if (showLoader) hideOverlay(loadingScreen);
   }
   await game.start();
+  // Ensure mobile pause button reflects running state
+  if (mobilePauseBtn) {
+    mobilePauseBtn.dataset.state = 'pause';
+    mobilePauseBtn.setAttribute('aria-label', 'Pause');
+    mobilePauseBtn.setAttribute('title', 'Pause');
+  }
 });
 
 restartBtn.addEventListener('click', async () => {
