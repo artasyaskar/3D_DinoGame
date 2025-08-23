@@ -36,6 +36,8 @@ const magnetFill = document.getElementById('magnet-fill');
 const comboValueEl = document.getElementById('combo-value');
 
 let game;
+// Capture user's mute intent even before game/audio are initialized
+let _desiredMuted = null; // null = no preference yet, true/false = user chose
 // Tap/double-tap detection and jump strengths
 let _lastKeyTap = 0;
 let _lastPointerTap = 0;
@@ -147,6 +149,17 @@ async function init() {
   });
 
   await game.init();
+  // Apply any pre-selected mute state immediately after sounds init
+  if (_desiredMuted !== null) {
+    const currently = !!game?.sounds?.muted;
+    if (_desiredMuted !== currently) {
+      game.toggleMute?.();
+    }
+    // Ensure button label matches
+    if (typeof _desiredMuted === 'boolean' && muteBtn) {
+      muteBtn.textContent = _desiredMuted ? 'Unmute' : 'Mute';
+    }
+  }
   // Ensure initial size is correct
   game.onResize();
 
@@ -405,13 +418,17 @@ muteBtn.addEventListener('touchstart', (e) => {
 }, { passive: false });
 muteBtn.addEventListener('click', async (e) => {
   if (e) { e.preventDefault(); e.stopPropagation(); }
-  // Ensure game exists so we don't call on undefined
-  if (!game) {
-    await init();
+  let newMuted;
+  if (game && game.toggleMute) {
+    newMuted = game.toggleMute();
+  } else {
+    // Game not ready yet: flip desired state and update UI instantly
+    _desiredMuted = !(_desiredMuted ?? false);
+    newMuted = _desiredMuted;
   }
-  const muted = game?.toggleMute?.();
-  if (typeof muted === 'boolean') {
-    muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+  // Update label immediately
+  if (typeof newMuted === 'boolean') {
+    muteBtn.textContent = newMuted ? 'Unmute' : 'Mute';
   }
 });
 
