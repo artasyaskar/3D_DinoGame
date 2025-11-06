@@ -40,13 +40,12 @@ export class Game {
     // other scripts attaching a 2D context which would block WebGL creation.
     const canvas = document.createElement('canvas');
     const ctxOpts = {
-      antialias: true,
-      alpha: true,
+      antialias: false,
+      alpha: false,
       depth: true,
       stencil: false,
       preserveDrawingBuffer: false,
-      powerPreference: 'high-performance',
-      desynchronized: true,
+      powerPreference: 'high-performance'
     };
     let gl = canvas.getContext('webgl2', ctxOpts) ||
              canvas.getContext('webgl', ctxOpts) ||
@@ -55,11 +54,10 @@ export class Game {
       throw new Error('WebGL not supported: failed to acquire WebGL context');
     }
     this.renderer = new THREE.WebGLRenderer({ canvas, context: gl });
-    // Slightly lower DPR cap on small/mobile screens to improve performance
-    const isSmallScreen = Math.min(window.innerWidth || w, window.innerHeight || h) <= 768;
-    const dprCap = isSmallScreen ? 1.25 : 1.75;
+    // Cap DPR aggressively on all devices; use even lower cap in low-power mode
+    const dprCap = this._lowPower ? 1.0 : 1.25;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
-    this.renderer.setSize(w, h);
+    this.renderer.setSize(w, h, false);
     // Disable all shadow mapping to avoid any darkening
     this.renderer.shadowMap.enabled = false;
     // Ensure textures from /public are displayed with correct gamma/colors
@@ -73,17 +71,25 @@ export class Game {
     }
     // Darker clear color to avoid overall washed look
     this.renderer.setClearColor(0x0b1220, 1);
+    // Ensure the canvas and container are visually opaque immediately to avoid any black flicker
+    try {
+      this.renderer.domElement.style.backgroundColor = '#0b1220';
+      if (this.container && this.container.style) this.container.style.backgroundColor = '#0b1220';
+      this.renderer.domElement.style.display = 'block';
+      // Hide canvas until we render a couple of frames to avoid any first-frame pop
+      this.renderer.domElement.style.visibility = 'hidden';
+    } catch(_) {}
     this.container.appendChild(this.renderer.domElement);
 
     // Post-processing disabled for performance
     this.postFX = null;
 
     // Lights
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x334455, 1.0);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x334455, 1.05);
     this.scene.add(hemi);
-    const ambient = new THREE.AmbientLight(0xffffff, 0.65);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.75);
     this.scene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xffffff, 1.4);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.5);
     dir.position.set(8, 12, 6);
     dir.castShadow = false; // no shadows
     dir.shadow.camera.near = 0.1;
@@ -91,7 +97,7 @@ export class Game {
     dir.shadow.mapSize.set(1024, 1024);
     this.scene.add(dir);
     // Soft front fill light that follows the player to ensure subject visibility
-    this.fillLight = new THREE.PointLight(0xffffff, 1.0, 30);
+    this.fillLight = new THREE.PointLight(0xffffff, 1.1, 30);
     this.fillLight.position.set(2, 3, 3);
     this.scene.add(this.fillLight);
 
@@ -110,9 +116,11 @@ export class Game {
     // Sky (clouds + stars)
     this.sky = new SkySystem(this.scene);
     this.sky.init();
+    // Paint an initial frame immediately to avoid any black flash before the loop starts
+    try { this.renderer.clear(true, true, true); this.renderer.render(this.scene, this.camera); } catch(_) {}
 
     // Optional manual brightness tweak (kept subtle to not fight WeatherSystem)
-    this._brightnessLevels = [0.9, 1.0, 1.15];
+    this._brightnessLevels = [1.0, 1.08, 1.16];
     this._brightnessIndex = 1; // start neutral
     const applyBrightness = () => {
       const k = this._brightnessLevels[this._brightnessIndex];
@@ -120,10 +128,10 @@ export class Game {
         this.postFX.material.uniforms.exposure.value = k;
       }
       // Keep lights stable
-      hemi.intensity = 1.0;
-      ambient.intensity = 0.65;
-      dir.intensity = 1.4;
-      if (this.fillLight) this.fillLight.intensity = 1.0;
+      hemi.intensity = 1.05 * k;
+      ambient.intensity = 0.75 * k;
+      dir.intensity = 1.5 * k;
+      if (this.fillLight) this.fillLight.intensity = 1.1 * k;
     };
     applyBrightness();
     window.addEventListener('keydown', (e) => {
@@ -176,6 +184,11 @@ export class Game {
 
     // Post-resize auto-fit frames to ensure proper vertical fit on mobile
     this._fitFramesRemaining = 0;
+
+    // Startup performance guard
+    this._startupTimer = 0;
+    this._autoLowApplied = false;
+    this._revealFrames = 2; // number of frames to render before revealing canvas
 
     // Run cadence for footstep dust (seconds until next step effect)
     this._stepTimer = 0;
@@ -344,8 +357,9 @@ export class Game {
         samples: 0,
         adjustTimer: 0,
         pratio: this.renderer.getPixelRatio?.() || 1,
-        pratioMin: 0.75,
-        pratioMax: this.renderer.getPixelRatio?.() || 1.75,
+        pratioMin: 0.60,
+        pratioMax: this.renderer.getPixelRatio?.() || 1.25,
+        nextAllowedAdjust: performance.now() + 1200
       };
       // init complete
   }
@@ -482,8 +496,7 @@ export class Game {
       this.laneX = px + 0.33 * halfW;
     }
     // Update DPR on resize to handle zoom/orientation changes
-    const isSmallScreen = Math.min(window.innerWidth || w, window.innerHeight || h) <= 768;
-    const dprCap = this._lowPower ? 1.0 : (isSmallScreen ? 1.25 : 1.75);
+    const dprCap = this._lowPower ? 1.0 : 1.25;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
     this.renderer.setSize(w, h);
     this.postFX?.onResize(w, h);
@@ -709,11 +722,20 @@ export class Game {
       this._fpsAvg = this._fpsAvg * 0.85 + fps * 0.15;
       this._fpsEl.textContent = Math.round(this._fpsAvg) + ' FPS';
     }
-    if (this._perf.adjustTimer >= 1.2) {
+    // Early startup guard: if after ~2s avg frame time is high, auto-enable low-power
+    this._startupTimer += dt;
+    if (!this._autoLowApplied && this._startupTimer > 2.0) {
+      if (this._perf.avgMs > 20.0) {
+        this.setLowPower(true);
+        this._autoLowApplied = true;
+      }
+    }
+
+    if (this._perf.adjustTimer >= 1.2 && (performance.now() >= (this._perf.nextAllowedAdjust || 0))) {
       // Target ~60fps (16.7ms). If slower, reduce DPR a bit; if faster, increase up to cap.
       const targetMs = 16.7;
       let pr = this._perf.pratio;
-      const capSmallBase = (Math.min(window.innerWidth||1, window.innerHeight||1) <= 768) ? 1.25 : 1.75;
+      const capSmallBase = 1.25;
       const capSmall = this._lowPower ? 1.0 : Math.min(window.devicePixelRatio || pr, capSmallBase);
       this._perf.pratioMax = capSmall;
       if (this._perf.avgMs > targetMs * 1.15) {
@@ -727,9 +749,18 @@ export class Game {
         // Notify weather to scale particle counts accordingly (0..1 scale)
         let perfScale = THREE.MathUtils.clamp((pr - this._perf.pratioMin) / (this._perf.pratioMax - this._perf.pratioMin + 1e-6), 0, 1);
         if (this._lowPower) perfScale *= 0.7; // modest extra reduction in low-power mode
-        this.weather?.setPerfScale?.(perfScale);
+        this.weather?.setPerfScale?.(perfScale, pr);
+        this._perf.nextAllowedAdjust = performance.now() + 800; // debounce DPR changes
       }
       this._perf.adjustTimer = 0;
+    }
+
+    // Reveal canvas after a couple of stable frames to avoid first-frame pop
+    if (this._revealFrames > 0) {
+      this._revealFrames--;
+      if (this._revealFrames === 0) {
+        try { this.renderer.domElement.style.visibility = 'visible'; } catch(_) {}
+      }
     }
   }
 

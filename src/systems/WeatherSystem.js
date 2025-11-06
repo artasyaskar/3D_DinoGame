@@ -41,9 +41,10 @@ export class WeatherSystem {
     this._dropTex = this._makeDropTex();
     this._splashTex = this._makeSplashTex();
     this.rainIntensity = 0; // 0..1
-    this._baseMaxDrops = 650; // stronger visual presence while remaining performant
+    this._baseMaxDrops = 300; // reduced baseline for desktops
     this.maxDrops = this._baseMaxDrops;
     this._perfScale = 1.0; // 0..1 from Game perf scaler
+    this._currentPratio = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1.0;
     this.fogDensity = 0;
 
     // Tweening state
@@ -54,6 +55,15 @@ export class WeatherSystem {
     // Lower exposures so WeatherSystem can darken/brighten subtly
     this.dayExposure = 1.05;
     this.nightExposure = 0.70;
+  }
+
+  // Adjust internal budgets based on performance scaler (0..1) and current pixel ratio
+  setPerfScale(scale = 1.0, pratio = 1.0) {
+    this._perfScale = THREE.MathUtils.clamp(scale ?? 1.0, 0, 1);
+    this._currentPratio = Math.max(0.5, pratio || 1.0);
+    // Fewer drops at higher pixel ratios to keep GPU cost stable
+    const prFactor = 1.0 / this._currentPratio;
+    this.maxDrops = Math.max(0, Math.floor(this._baseMaxDrops * this._perfScale * prFactor));
   }
 
   // Public API

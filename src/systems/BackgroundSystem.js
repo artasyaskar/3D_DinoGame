@@ -135,7 +135,7 @@ export class BackgroundSystem {
       tex.wrapT = THREE.ClampToEdgeWrapping;
       tex.repeat.set(repeatX, 1);
       tex.offset.x = Math.random();
-      tex.anisotropy = 8;
+      tex.anisotropy = 2;
       tex.magFilter = THREE.LinearFilter;
       tex.minFilter = THREE.LinearMipmapLinearFilter;
       target.material.map = tex;

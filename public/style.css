@@ -86,6 +86,7 @@ body::after {
   height: 100dvh;
   overflow: hidden;
   touch-action: manipulation;
+  background-color: #0b1220; /* match renderer clear to avoid flashes */
 }
 
 canvas {
@@ -94,6 +95,8 @@ canvas {
   inset: 0;
   width: 100% !important;
   height: 100% !important;
+  background-color: #0b1220; /* ensure opaque even before GL paints */
+  transform: translateZ(0); /* stabilize compositing on some GPUs */
 }
 
 /* HUD: glass bar */

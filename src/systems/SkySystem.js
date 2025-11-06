@@ -77,7 +77,7 @@ export class SkySystem {
       tex.wrapT = THREE.ClampToEdgeWrapping;
       tex.repeat.set(repeatX, 1);
       tex.offset.x = Math.random();
-      tex.anisotropy = 8;
+      tex.anisotropy = 2;
       target.material.map = tex;
       target.material.opacity = 0.8;
       target.material.needsUpdate = true;
