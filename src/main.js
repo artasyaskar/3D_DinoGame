@@ -353,7 +353,7 @@ restartBtn.addEventListener('click', async () => {
 
 shareBtn.addEventListener('click', async () => {
   const score = finalScoreEl.textContent;
-  const shareUrl = 'https://3-d-dino-game.vercel.app/';
+  const shareUrl = 'https://3d-dino-game.vercel.app/';
   const text = `I scored ${score} in 3D Dino Game! Can you beat my score?`;
   const title = '3D Dino Game';
 
